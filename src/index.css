@@ -159,7 +159,7 @@ body::before {
   gap: 16px;
 }
 
-.topbar-signet-link {
+.topbar-action-link {
   font-family: var(--mono);
   font-size: 12px;
   letter-spacing: 0.1em;
@@ -170,7 +170,7 @@ body::before {
   transition: color 0.2s;
 }
 
-.topbar-signet-link:hover {
+.topbar-action-link:hover {
   color: var(--color-primary);
 }
 
@@ -367,36 +367,36 @@ body::before {
   color: var(--color-primary-light);
 }
 
-/* ─── Scry ─────────────────────────────────────────────────────────────────── */
+/* ─── Explorer ─────────────────────────────────────────────────────────────── */
 
 .search-section {
   margin-bottom: 24px;
 }
 
-.scry-results {}
+.lookup-results {}
 
-.scry-input-row {
+.lookup-input-row {
   display: flex;
   gap: 12px;
   align-items: stretch;
 }
 
-.scry-input-row .text-input {
+.lookup-input-row .text-input {
   flex: 1;
 }
 
-.scry-input-row .btn {
+.lookup-input-row .btn {
   white-space: nowrap;
 }
 
-.scry-detected {
+.lookup-detected {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--color-text-muted);
   letter-spacing: 0.08em;
 }
 
-.scry-type {
+.lookup-type {
   color: var(--color-primary);
   text-transform: uppercase;
   letter-spacing: 0.15em;
@@ -913,16 +913,16 @@ a.proof-link:hover {
     letter-spacing: 0.08em;
   }
 
-  .topbar-signet-link {
+  .topbar-action-link {
     display: none;
   }
 
-  .scry-input-row {
+  .lookup-input-row {
     flex-direction: column;
     gap: 8px;
   }
 
-  .scry-input-row .btn {
+  .lookup-input-row .btn {
     width: 100%;
     justify-content: center;
   }

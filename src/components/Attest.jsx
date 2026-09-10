@@ -85,14 +85,14 @@ function StepSignEth({ active, done, onSigned, fingerprint: confirmedFp }) {
     <div className={`step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
         <span className={`step-num ${active ? 'active-num' : ''}`}>02 //</span>
-        <span className="step-title">Enter Your GPG Fingerprint</span>
+        <span className="step-title">Enter Your PGP Fingerprint</span>
         {done && <span className="step-badge">✓ complete</span>}
       </div>
 
       {active && (
         <div className="fade-in">
           <p className="helper">
-            Run <code>gpg --fingerprint</code> and paste the output below. We'll find the fingerprint automatically.<br/>Don't have a PGP key? <a href="https://docs.thurin.id/#/scry/getting-started" target="_blank" rel="noopener noreferrer">Follow the getting started guide</a>.
+            Run <code>gpg --fingerprint</code> and paste the output below. We'll find the fingerprint automatically.<br/>Don't have a PGP key? <a href="https://docs.thurin.id/#/guides/getting-started" target="_blank" rel="noopener noreferrer">Follow the getting started guide</a>.
           </p>
 
           <div className="command-block">
@@ -307,14 +307,14 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
     <div className={`step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
         <span className={`step-num ${active ? 'active-num' : ''}`}>03 //</span>
-        <span className="step-title">Sign ETH Address with GPG</span>
+        <span className="step-title">Sign ETH Address with PGP</span>
         {done && <span className="step-badge">✓ complete</span>}
       </div>
 
       {active && (
         <div className="fade-in">
           <p className="helper">
-            In your terminal, run this command to sign your Ethereum address with your GPG key:
+            In your terminal, run this command to sign your Ethereum address with your PGP key:
           </p>
 
           <div className="command-block">
@@ -338,7 +338,7 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
           />
 
           <div className="status info" style={{ marginTop: 16, marginBottom: 16 }}>
-            <strong>Upload your key to keys.openpgp.org</strong> — this lets Scry fetch your latest key data
+            <strong>Upload your key to keys.openpgp.org</strong> — this lets Thurin fetch your latest key data
             (identity proofs, third-party signatures) even after publishing. Without it, only the key
             snapshot from publish time is shown.
             <div style={{ marginTop: 8 }}>
@@ -462,7 +462,7 @@ function StepAttest({ active, done, attestation, onPublish }) {
     : null
 
   const embedSnippet = attestation?.ethAddress
-    ? `<div data-scry-card="${attestation.ethAddress}" data-theme="thurin"></div>\n<script src="https://cdn.jsdelivr.net/npm/@thurinlabs/identity-kit@0/dist/embed.global.js"></script>`
+    ? `<div data-thurin-card="${attestation.ethAddress}" data-theme="thurin"></div>\n<script src="https://cdn.jsdelivr.net/npm/@thurinlabs/identity-kit@0/dist/embed.global.js"></script>`
     : ''
 
   const shareUrl = attestation?.ethAddress
@@ -480,12 +480,12 @@ function StepAttest({ active, done, attestation, onPublish }) {
       {done && attestation && (
         <div className="fade-in">
           <div className="status ok">
-            Identity claim sealed on-chain. Your ETH address and GPG key are now cryptographically linked.
+            Identity claim sealed on-chain. Your ETH address and PGP key are now cryptographically linked.
           </div>
 
           <div style={{ marginTop: 16 }} className="row">
             <a href={explorerUrl} className="btn btn-primary" target="_blank" rel="noopener noreferrer">
-              View in Scry
+              View identity
             </a>
             {txHash && (
               <button className="btn btn-sm" onClick={(e) => { copyToClipboard(txHash, e); }}>
@@ -523,7 +523,7 @@ function StepAttest({ active, done, attestation, onPublish }) {
         <div className="fade-in">
           <p className="helper">
             Both signatures are verified. This JSON is your identity claim — a cryptographic proof that your
-            ETH wallet and GPG key are controlled by the same person. Publish it on-chain to make it queryable.
+            ETH wallet and PGP key are controlled by the same person. Publish it on-chain to make it queryable.
           </p>
 
           <div className="attestation-output">
@@ -696,9 +696,9 @@ function YourAttestations({ address }) {
   )
 }
 
-// ─── Root Signet component ─────────────────────────────────────────────────
+// ─── Root Attest component ─────────────────────────────────────────────────
 
-export default function Signet() {
+export default function Attest() {
   const { address, isConnected } = useAccount()
 
   // State flowing through the steps
@@ -729,11 +729,11 @@ export default function Signet() {
 
   return (
     <>
-      <div className="signet-intro" style={{ maxWidth: 640, margin: '0 auto', padding: '0 16px' }}>
+      <div className="attest-intro" style={{ maxWidth: 640, margin: '0 auto', padding: '0 16px' }}>
         <p className="helper">
-          <strong>Signet</strong> binds your Ethereum address and your PGP key (your encryption key)
+          <strong>Attesting</strong> binds your Ethereum address and your PGP key (your encryption key)
           into one verifiable identity — the two vouch for each other, anchored on-chain. Once sealed,
-          your address, PGP key, and social proofs resolve as a single identity on Scry, with a card
+          your address, PGP key, and social proofs resolve as a single identity on thurin.id, with a card
           you can embed anywhere.
         </p>
         <p className="helper">To create a claim you'll need:</p>

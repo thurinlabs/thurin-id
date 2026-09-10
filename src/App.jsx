@@ -7,7 +7,7 @@ import { normalize } from 'viem/ens'
 import { readKey } from 'openpgp'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL } from './wagmiConfig'
 import {
-  ScryCard,
+  ThurinCard,
   IdentityKitProvider,
   identifyProof,
   verifyProof,
@@ -19,7 +19,7 @@ import {
   fetchEFPGraph,
 } from '@thurinlabs/identity-kit'
 import '@thurinlabs/identity-kit/styles'
-import Signet from './components/Signet'
+import Attest from './components/Attest'
 
 const mainnetClient = createPublicClient({
   chain: mainnet,
@@ -158,48 +158,34 @@ function ThemeSelect({ storageKey }) {
   )
 }
 
-function Topbar({ isSignet }) {
+function Topbar({ isAttest }) {
   return (
     <nav className="topbar">
-      {/* Cross-app links are plain hrefs: isSignet is read once on mount, so
-          switching apps needs a full page load, not a pushState. */}
-      {isSignet ? (
-        <a href="/signet" className="topbar-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <svg viewBox="20 20 76 76" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
-            <path d="M25 80 Q25 25 50 25 Q75 25 75 50" fill="none" stroke="#7c9a3e" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M33 75 Q33 35 50 35 Q67 35 67 52" fill="none" stroke="#7c9a3e" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M41 70 Q41 45 50 45 Q59 45 59 55" fill="none" stroke="#c9a227" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M50 65 L50 53" fill="none" stroke="#c9a227" strokeWidth="4" strokeLinecap="round"/>
-            <rect x="63" y="72" width="22" height="18" rx="2" fill="none" stroke="#c9a227" strokeWidth="3"/>
-            <path d="M68 72 V66 Q68 58 74 58 Q80 58 80 66 V72" fill="none" stroke="#c9a227" strokeWidth="3" strokeLinecap="round"/>
-          </svg>
-          Signet
-        </a>
-      ) : (
-        <a href="/" className="topbar-title" onClick={(e) => { e.preventDefault(); window.history.pushState(null, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')); }}
-           style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <svg viewBox="20 20 76 76" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
-            <path d="M25 80 Q25 25 50 25 Q75 25 75 50" fill="none" stroke="#7c9a3e" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M33 75 Q33 35 50 35 Q67 35 67 52" fill="none" stroke="#7c9a3e" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M41 70 Q41 45 50 45 Q59 45 59 55" fill="none" stroke="#c9a227" strokeWidth="4" strokeLinecap="round"/>
-            <path d="M50 65 L50 53" fill="none" stroke="#c9a227" strokeWidth="4" strokeLinecap="round"/>
-            <circle cx="72" cy="72" r="12" fill="none" stroke="#c9a227" strokeWidth="3.5"/>
-            <line x1="81" y1="81" x2="92" y2="92" stroke="#c9a227" strokeWidth="3.5" strokeLinecap="round"/>
-          </svg>
-          Scry
-        </a>
-      )}
+      {/* One product, one chrome. The route is read once on mount, so moving
+          between / and /attest is a full page load, not a pushState. */}
+      <a href="/" className="topbar-title" onClick={(e) => { if (isAttest) return; e.preventDefault(); window.history.pushState(null, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')); }}
+         style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <svg viewBox="20 20 76 76" xmlns="http://www.w3.org/2000/svg" width="36" height="36">
+          <path d="M25 80 Q25 25 50 25 Q75 25 75 50" fill="none" stroke="#7c9a3e" strokeWidth="4" strokeLinecap="round"/>
+          <path d="M33 75 Q33 35 50 35 Q67 35 67 52" fill="none" stroke="#7c9a3e" strokeWidth="4" strokeLinecap="round"/>
+          <path d="M41 70 Q41 45 50 45 Q59 45 59 55" fill="none" stroke="#c9a227" strokeWidth="4" strokeLinecap="round"/>
+          <path d="M50 65 L50 53" fill="none" stroke="#c9a227" strokeWidth="4" strokeLinecap="round"/>
+          <circle cx="72" cy="72" r="12" fill="none" stroke="#c9a227" strokeWidth="3.5"/>
+          <line x1="81" y1="81" x2="92" y2="92" stroke="#c9a227" strokeWidth="3.5" strokeLinecap="round"/>
+        </svg>
+        Thurin
+      </a>
       <div className="topbar-right">
-        {isSignet ? (
-          <a href="/" className="topbar-signet-link">
+        {isAttest ? (
+          <a href="/" className="topbar-action-link">
             Look up an identity
           </a>
         ) : (
-          <a href="/signet" className="topbar-signet-link" target="_blank" rel="noopener noreferrer">
+          <a href="/attest" className="topbar-action-link">
             Create identity claim
           </a>
         )}
-        <ThemeSelect storageKey="thurin-scry-theme" />
+        <ThemeSelect storageKey="thurin-theme" />
       </div>
     </nav>
   )
@@ -354,7 +340,7 @@ function PgpKeyInfo({ armoredKey }) {
               )
             })}
             <div className="proof-docs-footer">
-              <a href="https://docs.thurin.id/#/scry/proofs" target="_blank" rel="noopener noreferrer">how to add proofs</a>
+              <a href="https://docs.thurin.id/#/guides/proofs" target="_blank" rel="noopener noreferrer">how to add proofs</a>
             </div>
           </div>
         )
@@ -514,7 +500,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                 : 'Signature not verified — key data not shown.'}
             </div>
             <div className="proof-docs-footer">
-              <a href="https://docs.thurin.id/#/scry/proofs" target="_blank" rel="noopener noreferrer">how proofs work</a>
+              <a href="https://docs.thurin.id/#/guides/proofs" target="_blank" rel="noopener noreferrer">how proofs work</a>
             </div>
           </div>
         </div>
@@ -524,7 +510,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
             <div className="label">Identity Proofs</div>
             <div className="value" style={{ color: 'var(--color-text-muted)' }}>No proofs found</div>
             <div className="proof-docs-footer">
-              <a href="https://docs.thurin.id/#/scry/proofs" target="_blank" rel="noopener noreferrer">how to add proofs</a>
+              <a href="https://docs.thurin.id/#/guides/proofs" target="_blank" rel="noopener noreferrer">how to add proofs</a>
             </div>
           </div>
         </div>
@@ -582,8 +568,8 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
         <div className="status info" style={{ marginTop: 2 }}>
           No identity claims found for this address.
           <div style={{ marginTop: 8 }}>
-            <a href="/signet" className="fingerprint-link" target="_blank" rel="noopener noreferrer">
-              Create an identity claim on Signet →
+            <a href="/attest" className="fingerprint-link">
+              Create an identity claim →
             </a>
           </div>
         </div>
@@ -895,8 +881,8 @@ function FingerprintDetail({ fingerprint }) {
           <div className="status info" style={{ marginTop: 0 }}>
             No active claims found for this fingerprint.
             <div style={{ marginTop: 8 }}>
-              <a href="/signet" className="fingerprint-link" target="_blank" rel="noopener noreferrer">
-                Create an identity claim on Signet →
+              <a href="/attest" className="fingerprint-link">
+                Create an identity claim →
               </a>
             </div>
           </div>
@@ -915,7 +901,7 @@ function FingerprintDetail({ fingerprint }) {
                 : 'No verified claim for this fingerprint — key data not shown.'}
             </div>
             <div className="proof-docs-footer">
-              <a href="https://docs.thurin.id/#/scry/proofs" target="_blank" rel="noopener noreferrer">how proofs work</a>
+              <a href="https://docs.thurin.id/#/guides/proofs" target="_blank" rel="noopener noreferrer">how proofs work</a>
             </div>
           </div>
         </div>
@@ -924,9 +910,9 @@ function FingerprintDetail({ fingerprint }) {
   )
 }
 
-// ─── Scry ───────────────────────────────────────────────────────────────────
+// ─── Explorer ───────────────────────────────────────────────────────────────
 
-function Scry() {
+function Explorer() {
   const [query, setQuery] = useState(() => parseRoute()?.value || '')
   const [submitted, setSubmitted] = useState(() => parseRoute())
   const [cardTheme, setCardTheme] = useState(
@@ -1175,7 +1161,7 @@ function Scry() {
   return (
     <>
       <div className="search-section">
-        <div className="scry-input-row">
+        <div className="lookup-input-row">
           <input
             className="text-input"
             placeholder="0x address, ENS name, or PGP fingerprint"
@@ -1200,14 +1186,14 @@ function Scry() {
         )}
 
         {query.trim() && inputType && (
-          <div className="scry-detected" style={{ marginTop: 8 }}>
-            Detected: <span className="scry-type">{inputType === 'keyId' ? 'key ID' : inputType}</span>
+          <div className="lookup-detected" style={{ marginTop: 8 }}>
+            Detected: <span className="lookup-type">{inputType === 'keyId' ? 'key ID' : inputType}</span>
           </div>
         )}
         {!submitted && (
           <>
             <p className="helper" style={{ marginTop: 16, marginBottom: 0, textAlign: 'center' }}>
-              Don't have an identity claim yet? <a href="/signet" target="_blank" rel="noopener noreferrer">Create one on Signet</a>.
+              Don't have an identity claim yet? <a href="/attest">Create one</a>.
             </p>
             <h2 className="homepage-headline">See the full picture behind any Ethereum identity.</h2>
             <div className="homepage-cards">
@@ -1215,8 +1201,8 @@ function Scry() {
                 rpcUrl={import.meta.env.VITE_ALCHEMY_RPC_URL}
                 neynarApiKey={import.meta.env.VITE_NEYNAR_API_KEY}
               >
-                <ScryCard ens="vitalik.eth" theme={cardTheme} />
-                <ScryCard ens="bendoubleu.eth" theme={cardTheme} />
+                <ThurinCard ens="vitalik.eth" theme={cardTheme} />
+                <ThurinCard ens="bendoubleu.eth" theme={cardTheme} />
               </IdentityKitProvider>
             </div>
             <p className="homepage-cta">
@@ -1226,7 +1212,7 @@ function Scry() {
         )}
       </div>
 
-      <div className="scry-results">
+      <div className="lookup-results">
         {/* Key ID resolving */}
         {keyIdResolving && (
           <div className="status info" style={{ marginTop: 24 }}>
@@ -1270,8 +1256,8 @@ function Scry() {
               <div className="status info">
                 The PGPRegistry contract is not yet deployed. Once deployed to Sepolia, lookups will query on-chain data.
                 <div style={{ marginTop: 8 }}>
-                  <a href="/signet" className="fingerprint-link" target="_blank" rel="noopener noreferrer">
-                    Create an identity claim on Signet →
+                  <a href="/attest" className="fingerprint-link">
+                    Create an identity claim →
                   </a>
                 </div>
               </div>
@@ -1338,25 +1324,25 @@ function Scry() {
 // ─── Root App ───────────────────────────────────────────────────────────────
 
 export default function App() {
-  const isSignet = typeof window !== 'undefined' && window.location.pathname.startsWith('/signet')
+  const isAttest = typeof window !== 'undefined' && window.location.pathname.startsWith('/attest')
 
   useEffect(() => {
-    if (isSignet) document.title = 'Signet — Thurin Identity Forge'
-  }, [isSignet])
+    document.title = isAttest ? 'Thurin — Attest' : 'Thurin — Identity Explorer'
+  }, [isAttest])
 
   return (
     <div className="app">
-      <Topbar isSignet={isSignet} />
+      <Topbar isAttest={isAttest} />
 
-      {isSignet ? <Signet /> : <Scry />}
+      {isAttest ? <Attest /> : <Explorer />}
 
       <footer className="footer">
-        <span className="footer-version">{isSignet ? 'signet' : 'scry'} v{version}</span>
+        <span className="footer-version">thurin v{version}</span>
         <div className="footer-columns">
           <div className="footer-col">
             <span className="footer-col-label">Home</span>
             <a href="https://thurinlabs.id" target="_blank" rel="noopener noreferrer">Thurin Labs</a>
-            <a href="/signet">Signet</a>
+            <a href="/attest">Attest</a>
             <a href="https://thurinlabs.id/privacy/" target="_blank" rel="noopener noreferrer">Privacy</a>
           </div>
           <div className="footer-col">

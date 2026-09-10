@@ -12,10 +12,10 @@
   </g>
 
   <!-- App name -->
-  <text x="600" y="440" font-family="-apple-system, BlinkMacSystemFont, serif" font-size="72" font-weight="700" fill="#faf9f5" text-anchor="middle" letter-spacing="12">SCRY</text>
+  <text x="600" y="440" font-family="-apple-system, BlinkMacSystemFont, serif" font-size="72" font-weight="700" fill="#faf9f5" text-anchor="middle" letter-spacing="12">THURIN</text>
 
   <!-- Tagline -->
-  <text x="600" y="500" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="28" fill="#a8a598" text-anchor="middle">Thurin Identity Explorer</text>
+  <text x="600" y="500" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="28" fill="#a8a598" text-anchor="middle">Identity Explorer</text>
 
   <!-- Subtle brand -->
   <text x="600" y="580" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="20" fill="#5a5a4a" text-anchor="middle">thurin.id</text>

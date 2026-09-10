@@ -16,7 +16,7 @@ export const config = getDefaultConfig({
 
 export const REGISTRY_ADDRESS = '0xf7a45BC662A78a6fb417ED5f52b3766cbf13EbBb'
 
-// ABI: events + reads (used by explorer) + writes (used by Signet flow)
+// ABI: events + reads (used by explorer) + writes (used by the attestation flow at /attest)
 export const REGISTRY_ABI = [
   {
     name: 'Attested',

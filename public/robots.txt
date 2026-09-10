@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://scry.thurin.id/sitemap.xml
+Sitemap: https://thurin.id/sitemap.xml

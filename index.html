@@ -22,7 +22,18 @@
     <meta name="twitter:description" content="Explore and verify the Thurin identity graph. Look up addresses, ENS names, and GPG fingerprints." />
     <meta name="twitter:image" content="https://thurin.id/og-image.png" />
     <script>
-      document.documentElement.dataset.theme = localStorage.getItem('thurin-scry-theme') || 'thurin';
+      // Theme key migrated from 'thurin-scry-theme' (pre-0.5.0). Read the old key
+      // once, rewrite under the new one, so returning visitors keep their theme.
+      var theme = localStorage.getItem('thurin-theme');
+      if (!theme) {
+        var legacy = localStorage.getItem('thurin-scry-theme');
+        if (legacy) {
+          theme = legacy;
+          localStorage.setItem('thurin-theme', legacy);
+          localStorage.removeItem('thurin-scry-theme');
+        }
+      }
+      document.documentElement.dataset.theme = theme || 'thurin';
       // Set base href to root on thurin.id so path-routed pages load assets correctly
       if (window.location.hostname === 'thurin.id') {
         var base = document.createElement('base');

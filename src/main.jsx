@@ -7,7 +7,7 @@ import { config } from './wagmiConfig'
 import App from './App'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
-import './signet.css'
+import './attest.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {

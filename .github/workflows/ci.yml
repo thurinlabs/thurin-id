@@ -4,16 +4,16 @@ on:
   push:
   pull_request:
 
-# scry depends on @thurinlabs/identity-kit via `file:../identity-kit`, so CI
-# checks out identity-kit as a sibling and builds it before building scry.
+# thurin-id depends on @thurinlabs/identity-kit via `file:../identity-kit`, so CI
+# checks out identity-kit as a sibling and builds it before building thurin-id.
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout scry
+      - name: Checkout thurin-id
         uses: actions/checkout@v4
         with:
-          path: scry
+          path: thurin-id
       - name: Checkout identity-kit (local dependency)
         uses: actions/checkout@v4
         with:
@@ -25,6 +25,6 @@ jobs:
       - name: Build identity-kit
         working-directory: identity-kit
         run: npm ci && npm run build
-      - name: Build scry
-        working-directory: scry
+      - name: Build thurin-id
+        working-directory: thurin-id
         run: npm install && npm run build
