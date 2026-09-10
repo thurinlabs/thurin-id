@@ -500,8 +500,9 @@ function StepAttest({ active, done, attestation, onPublish }) {
       {active && !done && attestation && (
         <div className="fade-in">
           <p className="helper">
-            Both signatures are verified. This JSON is your identity claim — a cryptographic proof that your
-            ETH wallet and PGP key are controlled by the same person. Publish it on-chain to make it queryable.
+            Your PGP signature is verified. This JSON is your identity claim — a cryptographic proof that your
+            ETH wallet and PGP key are controlled by the same person. Publishing it from your connected wallet
+            completes the binding on-chain and makes it queryable.
           </p>
 
           <div className="attestation-output">
