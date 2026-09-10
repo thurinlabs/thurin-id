@@ -34,8 +34,11 @@
         }
       }
       document.documentElement.dataset.theme = theme || 'thurin';
-      // Set base href to root on thurin.id so path-routed pages load assets correctly
-      if (window.location.hostname === 'thurin.id') {
+      // Where path routes work (thurin.id, *.eth.limo via _redirects, local dev), pin
+      // relative asset URLs to the site root so /eth/<addr> still loads ./assets/*.
+      // Keep in sync with usesPathRouting() in src/App.jsx.
+      var h = window.location.hostname;
+      if (h === 'thurin.id' || /\.eth\.limo$/.test(h) || h === 'localhost' || h === '127.0.0.1') {
         var base = document.createElement('base');
         base.href = '/';
         document.head.prepend(base);

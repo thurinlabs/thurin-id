@@ -82,8 +82,17 @@ function copyToClipboard(text, e) {
 
 // ─── Path routing ───────────────────────────────────────────────────────────
 
+// Path routes (/eth/…, /attest) only work where the host serves index.html for
+// unknown paths: thurin.id (nginx @fallback), *.eth.limo (honours the IPFS
+// `_redirects` file shipped in public/), and the Vite dev/preview servers.
+// Anywhere else — e.g. a raw /ipfs/<cid>/ path gateway — fall back to #/ routes.
+export function usesPathRouting() {
+  const h = window.location.hostname
+  return h === 'thurin.id' || h.endsWith('.eth.limo') || h === 'localhost' || h === '127.0.0.1'
+}
+
 function parseRoute() {
-  // Check for legacy hash routes — redirect to path on thurin.id, keep hash elsewhere (IPFS/ENS)
+  // Legacy hash routes: rewrite to a path where path routing works, else parse the hash directly
   const hash = window.location.hash.replace(/^#\/?/, '')
   if (hash) {
     const slash = hash.indexOf('/')
@@ -91,10 +100,10 @@ function parseRoute() {
       const prefix = hash.slice(0, slash).toLowerCase()
       const value = decodeURIComponent(hash.slice(slash + 1))
       if (value && (prefix === 'eth' || prefix === 'pgp' || prefix === 'ens')) {
-        if (window.location.hostname === 'thurin.id') {
+        if (usesPathRouting()) {
           window.history.replaceState(null, '', `/${prefix}/${encodeURIComponent(value)}`)
         } else {
-          // On IPFS/ENS, parse the hash route directly
+          // Path gateway — parse the hash route directly
           return { type: prefix === 'eth' ? 'address' : prefix === 'pgp' ? (/^[0-9a-fA-F]{16}$/i.test(value) ? 'keyId' : 'fingerprint') : 'ens', value }
         }
       }
@@ -121,13 +130,13 @@ function parseRoute() {
 
 function pushRoute(type, value) {
   const prefix = type === 'address' ? 'eth' : (type === 'fingerprint' || type === 'keyId') ? 'pgp' : 'ens'
-  if (window.location.hostname === 'thurin.id') {
+  if (usesPathRouting()) {
     const newPath = `/${prefix}/${encodeURIComponent(value)}`
     if (window.location.pathname !== newPath) {
       window.history.pushState(null, '', newPath)
     }
   } else {
-    // IPFS/ENS — use hash routing
+    // Path gateway — use hash routing
     const newHash = `#/${prefix}/${encodeURIComponent(value)}`
     if (window.location.hash !== newHash) {
       window.location.hash = newHash
