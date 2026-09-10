@@ -1329,7 +1329,7 @@ export default function App() {
   const isAttest = typeof window !== 'undefined' && window.location.pathname.startsWith('/attest')
 
   useEffect(() => {
-    document.title = isAttest ? 'Thurin — Attest' : 'Thurin — Identity Explorer'
+    document.title = isAttest ? 'Thurin.id — Attest' : 'Thurin.id — Identity Explorer'
   }, [isAttest])
 
   return (
