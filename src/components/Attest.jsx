@@ -461,14 +461,6 @@ function StepAttest({ active, done, attestation, onPublish }) {
     ? `/eth/${attestation.ethAddress}`
     : null
 
-  const embedSnippet = attestation?.ethAddress
-    ? `<div data-thurin-card="${attestation.ethAddress}" data-theme="thurin"></div>\n<script src="https://cdn.jsdelivr.net/npm/@thurinlabs/identity-kit@0/dist/embed.global.js"></script>`
-    : ''
-
-  const shareUrl = attestation?.ethAddress
-    ? `https://twitter.com/intent/tweet?text=${encodeURIComponent('Prove more, reveal less. I just sealed my identity on @thurinlabs 🔐')}&url=${encodeURIComponent(`https://thurin.id/eth/${attestation.ethAddress}`)}`
-    : '#'
-
   return (
     <div className={`step ${active && !done ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
@@ -488,34 +480,20 @@ function StepAttest({ active, done, attestation, onPublish }) {
               View identity
             </a>
             {txHash && (
-              <button className="btn btn-sm" onClick={(e) => { copyToClipboard(txHash, e); }}>
-                Copy Tx Hash
-              </button>
+              <>
+                <a className="btn btn-sm" href={`https://etherscan.io/tx/${txHash}`} target="_blank" rel="noopener noreferrer">
+                  View Transaction
+                </a>
+                <button className="btn btn-sm" onClick={(e) => { copyToClipboard(txHash, e); }}>
+                  Copy Tx Hash
+                </button>
+              </>
             )}
             <button className="btn btn-sm" onClick={handleCopy}>
               {copied ? '✓ copied' : 'Copy JSON'}
             </button>
           </div>
 
-          <hr className="divider" />
-
-          <p className="helper">
-            <strong>Show it off.</strong> Drop your identity card on your site, blog, or GitHub README:
-          </p>
-          <div className="attestation-output">
-            <div className="attestation-output-header">
-              <span>embed</span>
-              <button className="btn btn-sm" onClick={(e) => copyToClipboard(embedSnippet, e)}>
-                copy
-              </button>
-            </div>
-            <pre>{embedSnippet}</pre>
-          </div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <a className="btn btn-sm" href={shareUrl} target="_blank" rel="noopener noreferrer">
-              Share on X
-            </a>
-          </div>
         </div>
       )}
 

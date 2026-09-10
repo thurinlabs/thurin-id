@@ -182,7 +182,7 @@ function Topbar({ isAttest }) {
           <circle cx="72" cy="72" r="12" fill="none" stroke="#c9a227" strokeWidth="3.5"/>
           <line x1="81" y1="81" x2="92" y2="92" stroke="#c9a227" strokeWidth="3.5" strokeLinecap="round"/>
         </svg>
-        Thurin
+        <span className="topbar-wordmark">Thurin<span className="topbar-wordmark-accent">.id</span></span>
       </a>
       <div className="topbar-right">
         {isAttest ? (
@@ -472,13 +472,6 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                 <span className={`status-badge ${latest.verification.verified ? 'verified' : 'unverified'}`}
                   title={latest.verification.verified ? 'PGP signature verified: the clearsign block in the event log is valid for this key and binds it to this address' : latest.verification.reason}>
                   {latest.verification.verified ? 'pgp verified' : 'unverified'}
-                </span>
-                <span
-                  className="status-badge"
-                  style={{ opacity: 0.35, cursor: 'default', borderColor: 'var(--color-text-muted)', color: 'var(--color-text-muted)' }}
-                  title="Thurin SBT verification coming soon"
-                >
-                  thurin verified
                 </span>
               </div>
             )}
@@ -1204,7 +1197,7 @@ function Explorer() {
             <p className="helper" style={{ marginTop: 16, marginBottom: 0, textAlign: 'center' }}>
               Don't have an identity claim yet? <a href="/attest">Create one</a>.
             </p>
-            <h2 className="homepage-headline">See the full picture behind any Ethereum identity.</h2>
+            <h2 className="homepage-headline">See the full picture behind any Ethereum identity</h2>
             <div className="homepage-cards">
               <IdentityKitProvider
                 rpcUrl={import.meta.env.VITE_ALCHEMY_RPC_URL}

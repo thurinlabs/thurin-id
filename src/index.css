@@ -140,17 +140,29 @@ body::before {
 }
 
 .topbar-title {
-  font-family: var(--heading);
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-heading);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  /* Same treatment as the ThurinLabs.id wordmark on the company site: body serif,
+     bold, tight tracking, text colour; the ".id" accent is lighter and primary-coloured. */
+  font-family: var(--body);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.02em;
   text-decoration: none;
 }
 
 .topbar-title svg {
   flex-shrink: 0;
+}
+
+/* Wordmark: "Thurin.id" — same treatment as ThurinLabs.id on the company site
+   (bold base, lighter accent-coloured ".id"). */
+.topbar-wordmark {
+  line-height: 1;
+}
+
+.topbar-wordmark-accent {
+  font-weight: 400;
+  color: var(--color-primary);
 }
 
 .topbar-right {
@@ -909,8 +921,7 @@ a.proof-link:hover {
   }
 
   .topbar-title {
-    font-size: 15px;
-    letter-spacing: 0.08em;
+    font-size: 21px;
   }
 
   .topbar-action-link {
