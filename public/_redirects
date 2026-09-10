@@ -1,0 +1,4 @@
+# IPFS gateway SPA fallback (IPFS web-redirects spec). Honoured only on
+# subdomain/DNSLink gateways such as eth.limo; ignored on path gateways, so
+# thurin.id (nginx + path gateway) is unaffected and keeps its own fallback.
+/*  /index.html  200
