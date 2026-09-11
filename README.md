@@ -32,9 +32,23 @@ VITE_NEYNAR_API_KEY=YOUR_NEYNAR_KEY
 
 Without `VITE_ALCHEMY_RPC_URL` the app builds, but the homepage cards render with no verified proofs (public RPCs throttle `eth_getLogs`).
 
+## Running against a local chain or Sepolia
+
+The PGPRegistry v2 has the same address on every network (`0x3F42806de924d3f22538ea5bC2B0b3860D27f5bB`). Set `VITE_CHAIN` and every chain-specific piece — wallet chain, RPC, explorer links — follows; the topbar shows a testnet badge.
+
+**Local (fastest):** run `anvil`, deploy the registry from the `pgp-registry` repo (`forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --private-key <anvil key> --broadcast`), import an anvil test account into your wallet and add a network for `http://127.0.0.1:8545` (chain id 31337), then:
+
+```bash
+VITE_CHAIN=local npm run dev
+```
+
+**Sepolia:** `VITE_CHAIN=sepolia npm run dev`. Your Alchemy key serves Sepolia from the same app (`eth-sepolia` host, swapped automatically). Get test ETH from a Sepolia faucet.
+
+Production builds leave `VITE_CHAIN` unset, so they stay on mainnet.
+
 ## How it works
 
-The explorer fetches attestation events from the `PGPRegistry` contract, retrieves the associated PGP public key from `keys.openpgp.org`, and parses `proof@thurin.id` notations. Verification lives in identity-kit and runs in the browser:
+The explorer reads attestations straight from the `PGPRegistry` contract — history, stored signature, and stored key, all plain `eth_call`s that any RPC serves — and parses the `proof@thurin.id` notations on the on-chain key. No keyserver is consulted. Verification lives in identity-kit and runs in the browser:
 
 - **GitHub** — fetches the gist via GitHub API, checks ownership and for `openpgp4fpr:FINGERPRINT`
 - **DNS** — queries TXT records via Cloudflare DNS-over-HTTPS, checks for `openpgp4fpr:FINGERPRINT`

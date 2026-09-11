@@ -1,73 +1,36 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
 import { http } from 'wagmi'
-import { mainnet } from 'wagmi/chains'
+import { mainnet, sepolia, foundry } from 'wagmi/chains'
+import { getRegistry, isNetworkName, REGISTRY_ABI } from '@thurinlabs/identity-kit'
 
-export const RPC_URL = import.meta.env.VITE_ALCHEMY_RPC_URL
+// ─── Network ────────────────────────────────────────────────────────────────
+// VITE_CHAIN=mainnet (default) | sepolia | local (anvil). Everything chain-specific
+// derives from this: the wagmi chain, the registry address, the RPC, and the
+// explorer links. Production builds leave it unset.
+export const NETWORK = isNetworkName(import.meta.env.VITE_CHAIN) ? import.meta.env.VITE_CHAIN : 'mainnet'
+export const CHAIN = NETWORK === 'sepolia' ? sepolia : NETWORK === 'local' ? foundry : mainnet
+// The v2 registry has the same address on every network; VITE_REGISTRY_ADDRESS overrides it
+// (e.g. a local deploy that landed elsewhere).
+export const REGISTRY = getRegistry(NETWORK, import.meta.env.VITE_REGISTRY_ADDRESS)
+export const REGISTRY_ADDRESS = REGISTRY.address
+export const EXPLORER_URL = REGISTRY.explorerUrl // '' on local: no explorer links
+export { REGISTRY_ABI }
+
+// Alchemy serves every network from the same app key; swap the host for Sepolia
+// unless a dedicated URL is given. Local talks to anvil directly.
+const MAINNET_RPC = import.meta.env.VITE_ALCHEMY_RPC_URL
+export const RPC_URL = NETWORK === 'local'
+  ? (import.meta.env.VITE_LOCAL_RPC_URL || REGISTRY.defaultRpcUrl)
+  : NETWORK === 'sepolia'
+    ? (import.meta.env.VITE_SEPOLIA_RPC_URL || (MAINNET_RPC || '').replace('eth-mainnet', 'eth-sepolia') || REGISTRY.defaultRpcUrl)
+    : (MAINNET_RPC || REGISTRY.defaultRpcUrl)
 
 export const config = getDefaultConfig({
   appName: 'Thurin',
   projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID,
-  chains: [mainnet],
+  chains: [CHAIN],
   transports: {
-    [mainnet.id]: http(RPC_URL),
+    [CHAIN.id]: http(RPC_URL),
   },
   ssr: false,
 })
-
-export const REGISTRY_ADDRESS = '0xf7a45BC662A78a6fb417ED5f52b3766cbf13EbBb'
-
-// ABI: events + reads (used by explorer) + writes (used by the attestation flow at /attest)
-export const REGISTRY_ABI = [
-  {
-    name: 'Attested',
-    type: 'event',
-    inputs: [
-      { name: 'ethAddress', type: 'address', indexed: true },
-      { name: 'fingerprintHash', type: 'string', indexed: true },
-      { name: 'fingerprint', type: 'string', indexed: false },
-      { name: 'pgpSignature', type: 'string', indexed: false },
-      { name: 'pgpPublicKey', type: 'string', indexed: false },
-      { name: 'index', type: 'uint256', indexed: false },
-      { name: 'timestamp', type: 'uint256', indexed: false },
-    ],
-  },
-  {
-    name: 'attest',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'fingerprint', type: 'string' },
-      { name: 'pgpSignature', type: 'string' },
-      { name: 'pgpPublicKey', type: 'string' },
-    ],
-    outputs: [],
-  },
-  {
-    name: 'revoke',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'index', type: 'uint256' }],
-    outputs: [],
-  },
-  {
-    name: 'attestationCount',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'addr', type: 'address' }],
-    outputs: [{ name: '', type: 'uint256' }],
-  },
-  {
-    name: 'getAttestation',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [
-      { name: 'addr', type: 'address' },
-      { name: 'index', type: 'uint256' },
-    ],
-    outputs: [
-      { name: 'fingerprint', type: 'string' },
-      { name: 'createdAt', type: 'uint256' },
-      { name: 'revoked', type: 'bool' },
-    ],
-  },
-]

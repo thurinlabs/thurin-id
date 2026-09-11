@@ -1,9 +1,10 @@
-import { useState, useCallback, useMemo } from 'react'
+import { Fragment, useState, useCallback, useMemo, useEffect } from 'react'
 import { useAccount, useWriteContract, useReadContract, useReadContracts } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { mainnet } from 'wagmi/chains'
 import * as openpgp from 'openpgp'
-import { REGISTRY_ADDRESS, REGISTRY_ABI } from '../wagmiConfig'
+import { createPublicClient, http, stringToHex, hexToString } from 'viem'
+import { stripEmailUserIDs, hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint } from '@thurinlabs/identity-kit'
+import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL } from '../wagmiConfig'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -37,9 +38,10 @@ function gpgPayload(address) {
   return `I control the Ethereum address: ${address.toLowerCase()}`
 }
 
-// Must match PGPRegistry.MAX_PAYLOAD_BYTES (16 KB). The on-chain key only needs to
-// verify the attestation signature, so a minimal export stays well under this.
-const MAX_PUBKEY_BYTES = 16384
+// Must match PGPRegistry.MAX_KEY_BYTES (8 KB). The on-chain key only needs to
+// verify the attestation signature and carry the proof notations, so a minimal
+// export stays well under this — and every byte costs gas.
+const MAX_PUBKEY_BYTES = 8192
 
 // ─── Step 1: Connect Wallet ──────────────────────────────────────────────────
 
@@ -59,6 +61,60 @@ function StepConnect({ active, done }) {
       )}
 
       <ConnectButton showBalance={false} />
+    </div>
+  )
+}
+
+// ─── Step 2: Your email — a deliberate, visible choice ───────────────────────
+// 'hide' publishes a key with every email user ID removed (the default path);
+// 'show' publishes the key exactly as exported. The choice is made before any
+// signing so the rest of the flow can adapt to it.
+
+function StepEmailChoice({ active, done, choice, onChoose }) {
+  const cards = [
+    {
+      id: 'hide',
+      title: 'Keep my email off-chain',
+      tag: 'recommended',
+      body: 'Only a name from your key goes on-chain — never the email. You may need to add a name to your key; the next steps show how.',
+    },
+    {
+      id: 'show',
+      title: 'Include my email',
+      tag: 'if it\'s already public',
+      body: 'Your full key goes on-chain, email and all — the same key people find on keyservers, importable and usable to encrypt to you by address. Choose this if your email is already public; it can\'t be removed later.',
+    },
+  ]
+  return (
+    <div className={`step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
+      <div className="step-header">
+        <span className={`step-num ${active ? 'active-num' : ''}`}>02 //</span>
+        <span className="step-title">Your Email</span>
+        {done && <span className="step-badge">{choice === 'hide' ? '✓ off-chain' : '✓ included'}</span>}
+      </div>
+
+      {(active || done) && (
+        <div className="fade-in">
+          <p className="helper">
+            Your PGP key carries your name and email. The email does <strong>not</strong> have to go on-chain.
+            Pick one:
+          </p>
+          <div className="choice-cards">
+            {cards.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                className={`choice-card ${choice === c.id ? 'selected' : ''}`}
+                onClick={() => onChoose(c.id)}
+              >
+                <span className="choice-tag">{c.tag}</span>
+                <h3>{c.title}</h3>
+                <p>{c.body}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -84,7 +140,7 @@ function StepSignEth({ active, done, onSigned, fingerprint: confirmedFp }) {
   return (
     <div className={`step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
-        <span className={`step-num ${active ? 'active-num' : ''}`}>02 //</span>
+        <span className={`step-num ${active ? 'active-num' : ''}`}>03 //</span>
         <span className="step-title">Enter Your PGP Fingerprint</span>
         {done && <span className="step-badge">✓ complete</span>}
       </div>
@@ -143,192 +199,157 @@ function StepSignEth({ active, done, onSigned, fingerprint: confirmedFp }) {
   )
 }
 
-// ─── Step 3: GPG Sign ETH Address ────────────────────────────────────────────
+// ─── Step 3: Prepare key + sign ETH address ──────────────────────────────────
+//
+// What goes on-chain is the user's *exported* key with every email user ID
+// removed (unless they opt in). The keyserver is never consulted: keys.openpgp.org
+// only serves user IDs with a verified email and drops non-email user IDs, so it
+// can't supply the published identity that carries the proof notations.
 
-function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, pgpSig, setPgpSig }) {
+function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, pgpSig, setPgpSig, includeEmail }) {
   const [status, setStatus] = useState(null)
   const [isVerifying, setIsVerifying] = useState(false)
-  const [needsManualKey, setNeedsManualKey] = useState(false)
-  const [manualPubKey, setManualPubKey] = useState('')
-  const [pendingMessage, setPendingMessage] = useState(null) // stash parsed message for manual key flow
+  const [pubKeyText, setPubKeyText] = useState('')
+  // Set once the signature verifies: the full key + the parsed message, so the
+  // published key can be recomputed when the opt-in toggles.
+  const [verified, setVerified] = useState(null) // { armoredFull, signedText, keyId, fingerprint, publicKey }
+  const [preview, setPreview] = useState(null)   // { kept, removed, proofsPublished, proofsTotal, bytes }
 
-  const command = address && expectedFingerprint
-    ? `echo "${gpgPayload(address)}" | gpg --clearsign --armor -u ${expectedFingerprint}`
-    : address
-    ? `echo "${gpgPayload(address)}" | gpg --clearsign --armor`
+  const fpr = expectedFingerprint || 'YOUR_FINGERPRINT'
+  const addUidCommand = `gpg --quick-add-uid ${fpr} thurin`
+  const exportCommand = `gpg --export-options export-minimal,no-export-attributes --armor --export ${fpr}`
+  const command = address
+    ? `echo "${gpgPayload(address)}" | gpg --clearsign --armor -u ${fpr}`
     : `echo "connect wallet first" | gpg --clearsign --armor`
 
-  const exportCommand = expectedFingerprint
-    ? `gpg --export-options export-minimal,no-export-attributes --armor --export ${expectedFingerprint}`
-    : `gpg --export-options export-minimal,no-export-attributes --armor --export you@email.com`
+  // Derive the key that will be published from the verified full key + opt-in.
+  useEffect(() => {
+    if (!verified) return
+    let cancelled = false
+    ;(async () => {
+      const full = verified.armoredFull
+      const fullInfo = await parsePgpKey(full)
+      const proofsTotal = fullInfo ? fullInfo.notations.filter(n => identifyProof(n)).length : 0
 
-  // Verify signature against a public key (shared by both flows)
-  const verifySig = useCallback(async (message, publicKey, signedText, keyId) => {
-    const verificationResult = await openpgp.verify({
-      message,
-      verificationKeys: publicKey,
-    })
+      let armored, kept, removed
+      if (includeEmail) {
+        armored = full
+        kept = fullInfo?.userIDs ?? []
+        removed = []
+      } else {
+        const stripped = await stripEmailUserIDs(full)
+        if (!stripped) {
+          if (cancelled) return
+          setPreview(null)
+          onVerified(null)
+          setStatus({
+            type: 'err',
+            msg: 'This key has no name without an email. Add one with the command above, re-export, paste the new key, and verify again — or choose "email included".',
+          })
+          return
+        }
+        armored = stripped.armored; kept = stripped.kept; removed = stripped.removed
+      }
 
-    const { verified } = verificationResult.signatures[0]
-    await verified // throws if invalid
-
-    const fingerprint = publicKey.getFingerprint().toUpperCase()
-
-    // Verify the signing key matches the fingerprint from Step 2
-    if (expectedFingerprint && fingerprint !== expectedFingerprint.toUpperCase()) {
-      setStatus({
-        type: 'err',
-        msg: `Key mismatch: you signed with key ${fingerprint.slice(0, 8)}... but Step 2 fingerprint is ${expectedFingerprint.slice(0, 8)}... — sign with the correct key.`
-      })
-      return false
-    }
-
-    const armoredPublicKey = publicKey.armor()
-
-    // The on-chain payload is capped (PGPRegistry.MAX_PAYLOAD_BYTES). A well-used key
-    // with many notations/self-sigs can exceed it — but the on-chain key only needs to
-    // verify the seal, so route the user to paste a minimal export instead of failing.
-    const pubKeyBytes = new TextEncoder().encode(armoredPublicKey).length
-    if (pubKeyBytes > MAX_PUBKEY_BYTES) {
-      setPendingMessage({ message, signedText, keyId })
-      setNeedsManualKey(true)
-      setStatus({
-        type: 'err',
-        msg: `Your public key is ${(pubKeyBytes / 1024).toFixed(1)} KB — over the ${MAX_PUBKEY_BYTES / 1024} KB on-chain limit. Paste a minimal export below (the export command now uses --export-minimal).`,
-      })
-      return false
-    }
-
-    // Extract rich metadata from the key
-    const primaryUser = await publicKey.getPrimaryUser()
-    const userIDs = publicKey.users.map(u => u.userID?.userID).filter(Boolean)
-    const keyAlgo = publicKey.keyPacket.algorithm
-    const keyBits = publicKey.keyPacket.getBitSize?.() ?? null
-    const createdAt = publicKey.keyPacket.created?.toISOString() ?? null
-    const expirationTime = await publicKey.getExpirationTime()
-    const expiresAt = expirationTime && expirationTime !== Infinity
-      ? new Date(expirationTime).toISOString() : null
-    const subkeyCount = publicKey.subkeys?.length ?? 0
-
-    setStatus({ type: 'ok', msg: `✓ Valid signature from key ${fingerprint}` })
-    onVerified({
-      pgpSig: pgpSig.trim(),
-      signedText,
-      keyId,
-      fingerprint,
-      armoredPublicKey,
-      pgpMeta: {
-        userIDs,
-        algorithm: keyAlgo,
-        bits: keyBits,
-        createdAt,
-        expiresAt,
-        subkeys: subkeyCount,
-      },
-    })
-    return true
-  }, [pgpSig, onVerified, expectedFingerprint])
-
-  // Main verify: try keyserver first, fall back to manual paste
-  const handleVerify = useCallback(async () => {
-    if (!pgpSig.trim()) {
-      setStatus({ type: 'err', msg: 'Paste your PGP signed message above.' })
-      return
-    }
-
-    setIsVerifying(true)
-    setNeedsManualKey(false)
-    setStatus({ type: 'info', msg: 'Verifying PGP signature…' })
-
-    try {
-      const message = await openpgp.readCleartextMessage({ cleartextMessage: pgpSig.trim() })
-
-      const signedText = message.getText().trim()
-      const expected = gpgPayload(address)
-
-      if (!signedText.toLowerCase().includes(address.toLowerCase())) {
-        setStatus({ type: 'err', msg: `Signed text doesn't contain your address. Expected: "${expected}"` })
-        setIsVerifying(false)
+      const bytes = new TextEncoder().encode(armored).length
+      if (bytes > MAX_PUBKEY_BYTES) {
+        if (cancelled) return
+        setPreview(null)
+        onVerified(null)
+        setStatus({ type: 'err', msg: `The key to publish is ${(bytes / 1024).toFixed(1)} KB — over the ${MAX_PUBKEY_BYTES / 1024} KB on-chain limit. Use the minimal export command above.` })
         return
       }
 
+      const pubInfo = await parsePgpKey(armored)
+      const proofsPublished = pubInfo ? pubInfo.notations.filter(n => identifyProof(n)).length : 0
+      if (cancelled) return
+      setPreview({ kept, removed, proofsPublished, proofsTotal, bytes })
+      setStatus({ type: 'ok', msg: `✓ Valid signature from key ${verified.fingerprint}` })
+      onVerified({
+        pgpSig: pgpSig.trim(),
+        signedText: verified.signedText,
+        keyId: verified.keyId,
+        fingerprint: verified.fingerprint,
+        armoredPublicKey: armored,
+        pgpMeta: {
+          userIDs: kept,
+          algorithm: verified.publicKey.keyPacket.algorithm,
+          bits: verified.publicKey.keyPacket.getBitSize?.() ?? null,
+          createdAt: verified.publicKey.keyPacket.created?.toISOString() ?? null,
+          expiresAt: verified.expiresAt,
+          subkeys: verified.publicKey.subkeys?.length ?? 0,
+        },
+      })
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verified, includeEmail])
+
+  const handleVerify = useCallback(async () => {
+    if (!pgpSig.trim()) { setStatus({ type: 'err', msg: 'Paste your PGP signed message.' }); return }
+    if (!pubKeyText.trim()) { setStatus({ type: 'err', msg: 'Paste your exported public key.' }); return }
+    setIsVerifying(true)
+    setVerified(null)
+    setPreview(null)
+    setStatus({ type: 'info', msg: 'Verifying PGP signature…' })
+    try {
+      const message = await openpgp.readCleartextMessage({ cleartextMessage: pgpSig.trim() })
+      const signedText = message.getText().trim()
+      if (!signedText.toLowerCase().includes(address.toLowerCase())) {
+        setStatus({ type: 'err', msg: `Signed text doesn't contain your address. Expected: "${gpgPayload(address)}"` })
+        return
+      }
       const sigPackets = message.signature.packets
       if (!sigPackets || sigPackets.length === 0) {
         setStatus({ type: 'err', msg: 'No signature packet found in PGP message.' })
-        setIsVerifying(false)
         return
       }
-
       const keyId = sigPackets[0].issuerKeyID?.toHex()?.toUpperCase()
-      setStatus({ type: 'info', msg: `Fetching public key ${keyId} from keys.openpgp.org…` })
 
-      try {
-        const resp = await fetch(`https://keys.openpgp.org/vks/v1/by-keyid/${keyId}`)
-        if (!resp.ok) throw new Error('Key not found on keyserver')
-        const armored = await resp.text()
-        const publicKey = await openpgp.readKey({ armoredKey: armored })
+      const publicKey = await openpgp.readKey({ armoredKey: pubKeyText.trim() })
+      const { signatures } = await openpgp.verify({ message, verificationKeys: publicKey })
+      await signatures[0].verified // throws if invalid
 
-        await verifySig(message, publicKey, signedText, keyId)
-      } catch (fetchErr) {
-        // Keyserver failed — prompt for manual key paste
-        setPendingMessage({ message, signedText, keyId })
-        setNeedsManualKey(true)
-        setStatus({
-          type: 'info',
-          msg: `Could not fetch key from keyserver (${fetchErr.message}). Paste your public key below to verify locally.`
-        })
+      const fingerprint = publicKey.getFingerprint().toUpperCase()
+      if (expectedFingerprint && fingerprint !== expectedFingerprint.toUpperCase()) {
+        setStatus({ type: 'err', msg: `Key mismatch: you signed with key ${fingerprint.slice(0, 8)}... but Step 2 fingerprint is ${expectedFingerprint.slice(0, 8)}... — sign with the correct key.` })
+        return
       }
+      const expirationTime = await publicKey.getExpirationTime()
+      const expiresAt = expirationTime && expirationTime !== Infinity ? new Date(expirationTime).toISOString() : null
+      setVerified({ armoredFull: publicKey.armor(), signedText, keyId, fingerprint, publicKey, expiresAt })
     } catch (err) {
       setStatus({ type: 'err', msg: `Verification failed: ${err.message}` })
     } finally {
       setIsVerifying(false)
     }
-  }, [pgpSig, address, verifySig])
-
-  // Manual key verification
-  const handleManualVerify = useCallback(async () => {
-    if (!manualPubKey.trim() || !pendingMessage) return
-
-    setIsVerifying(true)
-    setStatus({ type: 'info', msg: 'Verifying signature against your public key…' })
-
-    try {
-      const publicKey = await openpgp.readKey({ armoredKey: manualPubKey.trim() })
-      const ok = await verifySig(pendingMessage.message, publicKey, pendingMessage.signedText, pendingMessage.keyId)
-      if (ok) setNeedsManualKey(false)
-    } catch (err) {
-      setStatus({ type: 'err', msg: `Verification failed: ${err.message}` })
-    } finally {
-      setIsVerifying(false)
-    }
-  }, [manualPubKey, pendingMessage, verifySig])
+  }, [pgpSig, pubKeyText, address, expectedFingerprint])
 
   return (
     <div className={`step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
-        <span className={`step-num ${active ? 'active-num' : ''}`}>03 //</span>
+        <span className={`step-num ${active ? 'active-num' : ''}`}>04 //</span>
         <span className="step-title">Sign ETH Address with PGP</span>
         {done && <span className="step-badge">✓ complete</span>}
       </div>
 
       {active && (
         <div className="fade-in">
-          <p className="helper">
-            In your terminal, run this command to sign your Ethereum address with your PGP key:
+          {!includeEmail && (
+            <div className="status info" style={{ marginBottom: 16 }}>
+              <strong>First, give your key a name with no email on it</strong> — that name is what people see. Add one (skip if you have one):
+              <div className="command-block" style={{ marginTop: 8 }}><span className="prompt">$ </span>{addUidCommand}</div>
+              <button className="btn btn-sm" onClick={(e) => copyToClipboard(addUidCommand, e)} style={{ marginTop: 8 }}>copy command</button>
+              <div style={{ marginTop: 8 }}>Your proofs go on that name — <a href="https://docs.thurin.id/#/guides/gnupg" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>how</a>.</div>
+            </div>
+          )}
+
+          <p className="helper">1. Sign your Ethereum address with your PGP key:</p>
+          <div className="command-block"><span className="prompt">$ </span>{command}</div>
+          <button className="btn btn-sm" onClick={(e) => copyToClipboard(command, e)} style={{ marginTop: 8 }}>copy command</button>
+          <p className="helper" style={{ marginTop: 12 }}>
+            Paste the entire output (including the <code>-----BEGIN PGP SIGNED MESSAGE-----</code> header):
           </p>
-
-          <div className="command-block">
-            <span className="prompt">$ </span>
-            {command}
-          </div>
-          <button className="btn btn-sm" onClick={(e) => copyToClipboard(command, e)} style={{ marginTop: 8 }}>
-            copy command
-          </button>
-
-          <p className="helper" style={{ marginTop: 16 }}>
-            Then paste the entire output (including the <code>-----BEGIN PGP SIGNED MESSAGE-----</code> header) below:
-          </p>
-
           <textarea
             className="pgp-input"
             placeholder={`-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\nI control the Ethereum address: 0x...\n-----BEGIN PGP SIGNATURE-----\n\n...\n-----END PGP SIGNATURE-----`}
@@ -337,56 +358,50 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
             spellCheck={false}
           />
 
-          <div className="status info" style={{ marginTop: 16, marginBottom: 16 }}>
-            <strong>Upload your key to keys.openpgp.org</strong> — this lets Thurin fetch your latest key data
-            (identity proofs, third-party signatures) even after publishing. Without it, only the key
-            snapshot from publish time is shown.
-            <div style={{ marginTop: 8 }}>
-              <a href="https://keys.openpgp.org/upload" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
-                Upload via browser
-              </a>
-              <span style={{ margin: '0 8px' }}>or</span>
-              <code>gpg --export {expectedFingerprint || 'YOUR_FINGERPRINT'} | curl -T - https://keys.openpgp.org</code>
-            </div>
-          </div>
+          <p className="helper" style={{ marginTop: 16 }}>2. Export your public key:</p>
+          <div className="command-block"><span className="prompt">$ </span>{exportCommand}</div>
+          <button className="btn btn-sm" onClick={(e) => copyToClipboard(exportCommand, e)} style={{ marginTop: 8 }}>copy command</button>
+          <p className="helper" style={{ marginTop: 12 }}>Paste the full public key block:</p>
+          <textarea
+            className="pgp-input"
+            style={{ minHeight: 140 }}
+            placeholder={`-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n...\n-----END PGP PUBLIC KEY BLOCK-----`}
+            value={pubKeyText}
+            onChange={e => setPubKeyText(e.target.value)}
+            spellCheck={false}
+          />
 
           <div className="row" style={{ marginTop: 12 }}>
-            <button className="btn btn-primary" onClick={handleVerify} disabled={isVerifying || !pgpSig.trim()}>
+            <button className="btn btn-primary" onClick={handleVerify} disabled={isVerifying || !pgpSig.trim() || !pubKeyText.trim()}>
               {isVerifying ? 'Verifying…' : 'Verify PGP Signature'}
             </button>
           </div>
 
           {status && <div className={`status ${status.type}`}>{status.msg}</div>}
 
-          {needsManualKey && (
-            <div className="fade-in" style={{ marginTop: 20 }}>
-              <p className="helper">
-                Export your public key with:
-              </p>
-              <div className="command-block">
-                <span className="prompt">$ </span>
-                {exportCommand}
-              </div>
-              <button className="btn btn-sm" onClick={(e) => copyToClipboard(exportCommand, e)} style={{ marginTop: 8 }}>
-                copy command
-              </button>
-
-              <p className="helper" style={{ marginTop: 16 }}>
-                Paste the full public key block below:
-              </p>
-              <textarea
-                className="pgp-input"
-                style={{ minHeight: 140 }}
-                placeholder={`-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n...\n-----END PGP PUBLIC KEY BLOCK-----`}
-                value={manualPubKey}
-                onChange={e => setManualPubKey(e.target.value)}
-                spellCheck={false}
-              />
-              <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn btn-primary" onClick={handleManualVerify} disabled={isVerifying || !manualPubKey.trim()}>
-                  {isVerifying ? 'Verifying…' : 'Verify with Public Key'}
-                </button>
-              </div>
+          {verified && (
+            <div className="mono-box fade-in" style={{ marginTop: 16 }}>
+              <div className="label">Going on-chain</div>
+              {preview ? (
+                <>
+                  <div className="value">Name: {preview.kept.join(', ')}</div>
+                  {preview.removed.length > 0 && (
+                    <div className="value" style={{ color: 'var(--color-text-muted)' }}>
+                      Left out (has an email): {preview.removed.join(', ')}
+                    </div>
+                  )}
+                  <div className="value">Proofs: {preview.proofsPublished}</div>
+                  {preview.proofsPublished === 0 && preview.proofsTotal > 0 && (
+                    <div className="status err" style={{ marginTop: 8 }}>
+                      Your {preview.proofsTotal} proof{preview.proofsTotal === 1 ? ' is' : 's are'} on the name being left out, so none will show.
+                      Move them to the published name (see "how" above), re-export, and verify again — or publish now and re-attest later.
+                    </div>
+                  )}
+                  <div className="value" style={{ color: 'var(--color-text-muted)' }}>{(preview.bytes / 1024).toFixed(1)} KB</div>
+                </>
+              ) : (
+                <div className="value" style={{ color: 'var(--color-text-muted)' }}>Nothing yet — see the message above.</div>
+              )}
             </div>
           )}
         </div>
@@ -404,7 +419,7 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
 
 // ─── Step 4: Generate Identity Claim ─────────────────────────────────────────
 
-function StepAttest({ active, done, attestation, onPublish }) {
+function StepAttest({ active, done, attestation, onPublish, activeClaims = [], replaceIndex, setReplaceIndex }) {
   const [copied, setCopied] = useState(false)
   const [publishStatus, setPublishStatus] = useState(null)
   const [txHash, setTxHash] = useState(null)
@@ -414,7 +429,7 @@ function StepAttest({ active, done, attestation, onPublish }) {
   if (!active && !done) return (
     <div className={`step`}>
       <div className="step-header">
-        <span className="step-num">04 //</span>
+        <span className="step-num">05 //</span>
         <span className="step-title">Generate & Publish Identity Claim</span>
       </div>
     </div>
@@ -430,20 +445,33 @@ function StepAttest({ active, done, attestation, onPublish }) {
     try {
       setPublishStatus({ type: 'info', msg: 'Sending transaction…' })
 
-      const hash = await writeContractAsync({
-        address: REGISTRY_ADDRESS,
-        abi: REGISTRY_ABI,
-        functionName: 'attest',
-        args: [attestation.gpgFingerprint, attestation.gpgSignature, attestation.gpgPublicKey],
-        chainId: mainnet.id,
-      })
+      const payload = [
+        fingerprintToBytes(attestation.gpgFingerprint),
+        stringToHex(attestation.gpgSignature),
+        stringToHex(attestation.gpgPublicKey),
+      ]
+      // `reattest` revokes the chosen claim and publishes the new one in a single transaction.
+      const hash = replaceIndex !== null && replaceIndex !== undefined
+        ? await writeContractAsync({
+            address: REGISTRY_ADDRESS,
+            abi: REGISTRY_ABI,
+            functionName: 'reattest',
+            args: [BigInt(replaceIndex), ...payload],
+            chainId: CHAIN.id,
+          })
+        : await writeContractAsync({
+            address: REGISTRY_ADDRESS,
+            abi: REGISTRY_ABI,
+            functionName: 'attest',
+            args: payload,
+            chainId: CHAIN.id,
+          })
 
       setTxHash(hash)
       setPublishStatus({ type: 'info', msg: `Waiting for confirmation… tx: ${hash.slice(0, 10)}…` })
 
-      const { createPublicClient, http } = await import('viem')
-      const rpcUrl = import.meta.env.VITE_ALCHEMY_RPC_URL
-      const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
+      // RPC_URL follows VITE_CHAIN; the raw env var is always the mainnet URL.
+      const client = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) })
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
 
       if (receipt.status === 'success') {
@@ -464,7 +492,7 @@ function StepAttest({ active, done, attestation, onPublish }) {
   return (
     <div className={`step ${active && !done ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
-        <span className={`step-num ${active && !done ? 'active-num' : ''}`}>04 //</span>
+        <span className={`step-num ${active && !done ? 'active-num' : ''}`}>05 //</span>
         <span className="step-title">Generate & Publish Identity Claim</span>
         {done && <span className="step-badge">✓ sealed</span>}
       </div>
@@ -481,9 +509,11 @@ function StepAttest({ active, done, attestation, onPublish }) {
             </a>
             {txHash && (
               <>
-                <a className="btn btn-sm" href={`https://etherscan.io/tx/${txHash}`} target="_blank" rel="noopener noreferrer">
-                  View Transaction
-                </a>
+                {EXPLORER_URL && (
+                  <a className="btn btn-sm" href={`${EXPLORER_URL}/tx/${txHash}`} target="_blank" rel="noopener noreferrer">
+                    View Transaction
+                  </a>
+                )}
                 <button className="btn btn-sm" onClick={(e) => { copyToClipboard(txHash, e); }}>
                   Copy Tx Hash
                 </button>
@@ -518,12 +548,35 @@ function StepAttest({ active, done, attestation, onPublish }) {
           <hr className="divider" />
 
           <p className="helper">
-            The contract stores the fingerprint↔address mapping on-chain. The PGP signature itself
-            lives in the event log — verifiable by anyone, forever.
+            The contract stores your address, the fingerprint, the signature, and the key — readable by
+            anyone from any Ethereum node, forever.
           </p>
 
+          {activeClaims.length > 0 && (
+            <div className="mono-box" style={{ marginBottom: 12 }}>
+              <div className="label">Replace an existing claim?</div>
+              <select
+                value={replaceIndex === null || replaceIndex === undefined ? '' : String(replaceIndex)}
+                onChange={e => setReplaceIndex(e.target.value === '' ? null : Number(e.target.value))}
+                style={{ marginTop: 6 }}
+              >
+                <option value="">No — add alongside my active claims</option>
+                {activeClaims.map(c => (
+                  <option key={c.index} value={String(c.index)}>
+                    Yes — revoke #{c.index} ({c.fingerprint.toUpperCase().slice(0, 8)}…{c.fingerprint.toUpperCase().slice(-8)}) in the same transaction
+                  </option>
+                ))}
+              </select>
+              {activeClaims.some(c => c.fingerprint === attestation.gpgFingerprint.toLowerCase()) && (replaceIndex === null || replaceIndex === undefined) && (
+                <div className="status err" style={{ marginTop: 8 }}>
+                  This key already has an active claim. Pick it above to replace it — the registry allows one active claim per key.
+                </div>
+              )}
+            </div>
+          )}
+
           <button className="btn btn-primary" onClick={handlePublish} disabled={publishStatus?.type === 'info'}>
-            {publishStatus?.type === 'info' ? 'Publishing…' : 'Publish to Registry'}
+            {publishStatus?.type === 'info' ? 'Publishing…' : (replaceIndex !== null && replaceIndex !== undefined ? 'Replace & Publish' : 'Publish to Registry')}
           </button>
 
           {publishStatus && <div className={`status ${publishStatus.type}`}>{publishStatus.msg}</div>}
@@ -542,50 +595,205 @@ function formatDate(ts) {
   })
 }
 
-function YourAttestations({ address }) {
-  const [revokeStatus, setRevokeStatus] = useState({})
-  const { writeContractAsync } = useWriteContract()
-
-
-  const { data: count, refetch: refetchCount } = useReadContract({
+/** The connected wallet's claims from the v2 registry, newest first, with the stored key. */
+function useMyAttestations(address) {
+  const { data: rows, refetch: refetchRows, isFetched } = useReadContract({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
-    functionName: 'attestationCount',
-    args: [address],
-    chainId: mainnet.id,
+    functionName: 'attestationsOf',
+    args: address ? [address] : undefined,
+    chainId: CHAIN.id,
+    query: { enabled: !!address },
   })
-
-  const numCount = count !== undefined ? Number(count) : 0
+  const count = rows ? rows.length : 0
 
   const contracts = useMemo(() => {
-    if (!numCount) return []
-    return Array.from({ length: numCount }, (_, i) => ({
+    if (!address || !count) return []
+    return Array.from({ length: count }, (_, i) => ({
       address: REGISTRY_ADDRESS,
       abi: REGISTRY_ABI,
-      functionName: 'getAttestation',
+      functionName: 'getPayload',
       args: [address, BigInt(i)],
-      chainId: mainnet.id,
+      chainId: CHAIN.id,
     }))
-  }, [address, numCount])
+  }, [address, count])
 
-  const { data: allAtt, refetch: refetchAtt } = useReadContracts({
+  const { data: payloads, refetch: refetchPayloads } = useReadContracts({
     contracts,
     query: { enabled: contracts.length > 0 },
   })
 
   const attestations = useMemo(() => {
-    if (!allAtt) return []
-    return allAtt
-      .map((item, index) => {
-        if (item.status !== 'success') return null
-        const [fingerprint, createdAt, revoked] = item.result
-        return { index, fingerprint, createdAt: Number(createdAt), revoked }
+    if (!rows) return []
+    return rows
+      .map((row, index) => {
+        const p = payloads?.[index]
+        const revokedAt = Number(row.revokedAt)
+        return {
+          index,
+          fingerprint: bytesToFingerprint(row.fingerprint),
+          createdAt: Number(row.createdAt),
+          revoked: revokedAt !== 0,
+          pgpPublicKey: p?.status === 'success' ? hexToString(p.result[1]) : null,
+        }
       })
-      .filter(Boolean)
       .reverse()
-  }, [allAtt])
+  }, [rows, payloads])
 
-  if (numCount === 0) return null
+  const refetch = useCallback(() => { refetchRows(); refetchPayloads() }, [refetchRows, refetchPayloads])
+  const loaded = isFetched && (count === 0 || payloads !== undefined)
+  return { attestations, count, refetch, loaded }
+}
+
+/** Paste a fresh export → strip emails → `updateKey`. Same key, new notations, no new signature. */
+function UpdateKeyPanel({ claim, address, onDone, onCancel }) {
+  const [keyText, setKeyText] = useState('')
+  const [preview, setPreview] = useState(null)
+  const [status, setStatus] = useState(null)
+  const [result, setResult] = useState(null) // { hash, proofs, kept } once the update is confirmed
+  const { writeContractAsync } = useWriteContract()
+
+  useEffect(() => {
+    let cancelled = false
+    setPreview(null)
+    setStatus(null)
+    const text = keyText.trim()
+    if (!text) return
+    ;(async () => {
+      const info = await parsePgpKey(text)
+      if (cancelled) return
+      if (!info) { setStatus({ type: 'err', msg: 'That is not a PGP public key.' }); return }
+      if (info.fingerprint.toLowerCase() !== claim.fingerprint) {
+        setStatus({ type: 'err', msg: `That key's fingerprint (${info.fingerprint}) is not this claim's key.` })
+        return
+      }
+      const stripped = await stripEmailUserIDs(text)
+      if (cancelled) return
+      if (!stripped) { setStatus({ type: 'err', msg: 'This key has no name without an email. Add one (gpg --quick-add-uid <fingerprint> thurin), re-export, and paste again.' }); return }
+      const published = await parsePgpKey(stripped.armored)
+      const proofs = (published?.notations || []).filter(n => identifyProof(n)).length
+      setPreview({ armored: stripped.armored, kept: stripped.kept, removed: stripped.removed, proofs, bytes: new TextEncoder().encode(stripped.armored).length })
+    })()
+    return () => { cancelled = true }
+  }, [keyText, claim.fingerprint])
+
+  const handleUpdate = async () => {
+    if (!preview) return
+    if (preview.bytes > MAX_PUBKEY_BYTES) { setStatus({ type: 'err', msg: `Key is ${(preview.bytes / 1024).toFixed(1)} KB; the registry accepts up to ${MAX_PUBKEY_BYTES / 1024} KB. Export a minimal key (gpg --export-options export-minimal).` }); return }
+    try {
+      setStatus({ type: 'info', msg: 'Sending transaction…' })
+      const hash = await writeContractAsync({
+        address: REGISTRY_ADDRESS,
+        abi: REGISTRY_ABI,
+        functionName: 'updateKey',
+        args: [BigInt(claim.index), stringToHex(preview.armored)],
+        chainId: CHAIN.id,
+      })
+      setStatus({ type: 'info', msg: 'Waiting for confirmation…' })
+      const client = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) })
+      const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
+      if (receipt.status === 'success') {
+        setStatus(null)
+        setResult({ hash, proofs: preview.proofs, kept: preview.kept })
+        onDone && onDone()
+      } else {
+        setStatus({ type: 'err', msg: `Transaction reverted. Tx: ${hash}` })
+      }
+    } catch (err) {
+      setStatus({ type: 'err', msg: err.shortMessage || err.message })
+    }
+  }
+
+  const exportCommand = `gpg --export-options export-minimal,no-export-attributes --armor --export ${claim.fingerprint.toUpperCase()}`
+
+  if (result) return (
+    <div className="update-panel fade-in">
+      <div className="status ok">
+        ✓ Key updated on claim #{claim.index}. Published name: {result.kept.join(', ')} · proofs: {result.proofs}.
+      </div>
+      <div className="row" style={{ marginTop: 12 }}>
+        <a href={`/eth/${address}`} className="btn btn-primary" target="_blank" rel="noopener noreferrer">View identity</a>
+        {EXPLORER_URL && (
+          <a className="btn btn-sm" href={`${EXPLORER_URL}/tx/${result.hash}`} target="_blank" rel="noopener noreferrer">View Transaction</a>
+        )}
+        <button className="btn btn-sm" onClick={(e) => copyToClipboard(result.hash, e)}>Copy Tx Hash</button>
+        <button className="btn btn-sm" onClick={onCancel}>close</button>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="update-panel fade-in">
+      <p className="helper">
+        Update the key on claim #{claim.index}. Add or change proof notations on your published name, then
+        export the same key and paste it below. Email names are left out automatically. No new signature is needed.
+      </p>
+
+      <p className="helper" style={{ marginTop: 12 }}>1. Export your public key:</p>
+      <div className="command-block"><span className="prompt">$ </span>{exportCommand}</div>
+      <button className="btn btn-sm" onClick={(e) => copyToClipboard(exportCommand, e)} style={{ marginTop: 8 }}>copy command</button>
+
+      <p className="helper" style={{ marginTop: 12 }}>2. Paste the full public key block:</p>
+      <textarea
+        className="pgp-input"
+        style={{ minHeight: 140 }}
+        placeholder={`-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n...\n-----END PGP PUBLIC KEY BLOCK-----`}
+        value={keyText}
+        onChange={e => setKeyText(e.target.value)}
+        spellCheck={false}
+      />
+
+      {preview && (
+        <div className="mono-box fade-in" style={{ marginTop: 12 }}>
+          <div className="label">Going on-chain</div>
+          <div className="value">Name: {preview.kept.join(', ')}</div>
+          {preview.removed.length > 0 && (
+            <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (has an email): {preview.removed.join(', ')}</div>
+          )}
+          <div className="value">Proofs: {preview.proofs}</div>
+          <div className="value" style={{ color: 'var(--color-text-muted)' }}>{(preview.bytes / 1024).toFixed(1)} KB</div>
+        </div>
+      )}
+
+      <div className="row" style={{ marginTop: 12 }}>
+        <button className="btn btn-primary" onClick={handleUpdate} disabled={!preview || status?.type === 'info'}>
+          {status?.type === 'info' ? 'Updating…' : 'Update key'}
+        </button>
+        <button className="btn btn-sm" onClick={onCancel}>cancel</button>
+      </div>
+      {status && <div className={`status ${status.type}`}>{status.msg}</div>}
+    </div>
+  )
+}
+
+function YourAttestations({ address, attestations, count, refetch, onCreate }) {
+  const [revokeStatus, setRevokeStatus] = useState({})
+  const [emailByIndex, setEmailByIndex] = useState({}) // index → true when the on-chain key has an email user ID
+  const [updating, setUpdating] = useState(null)       // index of the claim whose key is being updated
+  const { writeContractAsync } = useWriteContract()
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const next = {}
+      for (const a of attestations) {
+        if (!a.revoked && a.pgpPublicKey) next[a.index] = await hasEmailUserID(a.pgpPublicKey)
+      }
+      if (!cancelled) setEmailByIndex(next)
+    })()
+    return () => { cancelled = true }
+  }, [attestations])
+
+  if (count === 0) return (
+    <div className="step active">
+      <div className="step-header">
+        <span className="step-title">Your Identity Claims</span>
+        <span className="step-badge">none yet</span>
+      </div>
+      <p className="helper">This wallet has no identity claim yet.</p>
+      <button className="btn btn-primary" onClick={onCreate}>Create your first claim</button>
+    </div>
+  )
 
   const handleRevoke = async (index) => {
     try {
@@ -596,19 +804,16 @@ function YourAttestations({ address }) {
         abi: REGISTRY_ABI,
         functionName: 'revoke',
         args: [BigInt(index)],
-        chainId: mainnet.id,
+        chainId: CHAIN.id,
       })
 
       setRevokeStatus(s => ({ ...s, [index]: { type: 'info', msg: `Waiting for confirmation…` } }))
 
-      const { createPublicClient, http } = await import('viem')
-      const rpcUrl = import.meta.env.VITE_ALCHEMY_RPC_URL
-      const client = createPublicClient({ chain: mainnet, transport: http(rpcUrl) })
+      const client = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) })
       await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
 
       setRevokeStatus(s => ({ ...s, [index]: { type: 'ok', msg: 'Revoked.' } }))
-      refetchCount()
-      refetchAtt()
+      refetch()
     } catch (err) {
       setRevokeStatus(s => ({ ...s, [index]: { type: 'err', msg: err.shortMessage || err.message } }))
     }
@@ -619,7 +824,6 @@ function YourAttestations({ address }) {
   return (
     <div className="step active">
       <div className="step-header">
-        <span className="step-num active-num">00 //</span>
         <span className="step-title">Your Identity Claims</span>
         <span className="step-badge">{activeCount} active</span>
       </div>
@@ -637,7 +841,8 @@ function YourAttestations({ address }) {
           </thead>
           <tbody>
             {attestations.map(a => (
-              <tr key={a.index}>
+              <Fragment key={a.index}>
+              <tr>
                 <td className="att-index">{a.index}</td>
                 <td>
                   <a href={`/pgp/${a.fingerprint.toUpperCase()}`} rel="noopener noreferrer" style={{ color: 'inherit' }}>
@@ -650,23 +855,48 @@ function YourAttestations({ address }) {
                     {a.revoked ? 'revoked' : 'active'}
                   </span>
                 </td>
-                <td>
+                <td className="att-actions-cell">
                   {!a.revoked && (
-                    <button
-                      className="btn btn-sm"
-                      onClick={() => handleRevoke(a.index)}
-                      disabled={revokeStatus[a.index]?.type === 'info'}
-                    >
-                      {revokeStatus[a.index]?.type === 'info' ? 'Revoking…' : 'Revoke'}
-                    </button>
-                  )}
-                  {revokeStatus[a.index] && revokeStatus[a.index].type !== 'info' && (
-                    <span className={`status ${revokeStatus[a.index].type}`} style={{ marginLeft: 8, fontSize: '12px' }}>
-                      {revokeStatus[a.index].msg}
-                    </span>
+                    <div className="att-actions">
+                      <button className="btn btn-sm" onClick={() => setUpdating(updating === a.index ? null : a.index)}>
+                        {updating === a.index ? 'Close' : 'Update'}
+                      </button>
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => handleRevoke(a.index)}
+                        disabled={revokeStatus[a.index]?.type === 'info'}
+                      >
+                        {revokeStatus[a.index]?.type === 'info' ? 'Revoking…' : 'Revoke'}
+                      </button>
+                    </div>
                   )}
                 </td>
               </tr>
+              {(revokeStatus[a.index]?.type === 'ok' || revokeStatus[a.index]?.type === 'err' || (!a.revoked && emailByIndex[a.index])) && (
+                <tr className="att-note-row">
+                  <td colSpan={5} style={{ padding: '0 16px 10px' }}>
+                    {!a.revoked && emailByIndex[a.index] && (
+                      <div className="status err" style={{ fontSize: '12px', margin: 0 }}
+                        title="The key stored on this claim carries an email user ID. Updating the key replaces what the explorer shows; the old copy stays in chain history.">
+                        Contains your email — update the key with a copy that leaves it out
+                      </div>
+                    )}
+                    {revokeStatus[a.index] && revokeStatus[a.index].type !== 'info' && (
+                      <span className={`status ${revokeStatus[a.index].type}`} style={{ fontSize: '12px' }}>
+                        {revokeStatus[a.index].msg}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              )}
+              {updating === a.index && !a.revoked && (
+                <tr key={`${a.index}-update`} className="att-update-row">
+                  <td colSpan={5} style={{ padding: '4px 8px 12px' }}>
+                    <UpdateKeyPanel claim={a} address={address} onDone={refetch} onCancel={() => setUpdating(null)} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -685,12 +915,32 @@ export default function Attest() {
   const [pgpData, setPgpData]   = useState(null)   // { pgpSig, signedText, keyId, fingerprint, armoredPublicKey, pgpMeta }
   const [pgpSigText, setPgpSigText] = useState('') // textarea value
   const [published, setPublished] = useState(false)
+  const [emailChoice, setEmailChoice] = useState(null) // 'hide' | 'show'
+  const [replaceIndex, setReplaceIndex] = useState(null) // claim to revoke in the same tx, if any
+  const { attestations: myClaims, count: myCount, refetch: refetchMine, loaded: myLoaded } = useMyAttestations(address)
+  const activeClaims = useMemo(() => myClaims.filter(c => !c.revoked), [myClaims])
+
+  // Tabs: returning users land on their claims, first-timers on the wizard.
+  const [tab, setTab] = useState(null) // 'claims' | 'new'
+  useEffect(() => {
+    if (tab !== null || !myLoaded) return
+    setTab(activeClaims.length > 0 ? 'claims' : 'new')
+  }, [myLoaded, activeClaims.length, tab])
+  useEffect(() => { if (!isConnected) setTab(null) }, [isConnected])
+
+  // Default to replacing the active claim for the same key (the registry allows one per key).
+  useEffect(() => {
+    if (!ethData?.fingerprint) return
+    const same = activeClaims.find(c => c.fingerprint === ethData.fingerprint.toLowerCase())
+    setReplaceIndex(same ? same.index : null)
+  }, [ethData?.fingerprint, activeClaims])
 
   // Derive active step
   const step = !isConnected ? 1
-    : !ethData ? 2
-    : !pgpData ? 3
-    : 4
+    : !emailChoice ? 2
+    : !ethData ? 3
+    : !pgpData ? 4
+    : 5
 
   // Build final attestation object. The ETH side of the claim is the publish tx
   // itself (msg.sender + fingerprint), so no separate ETH signature is stored.
@@ -715,6 +965,10 @@ export default function Attest() {
           your address, PGP key, and social proofs resolve as a single identity on thurin.id, with a card
           you can embed anywhere.
         </p>
+        <p className="helper">
+          Published on-chain: your address, your key's fingerprint, one name from your key, and the proofs on it.
+          Your email stays off-chain unless you choose otherwise.
+        </p>
         <p className="helper">To create a claim you'll need:</p>
         <ul className="helper" style={{ margin: '8px 0 24px 20px', lineHeight: 1.7 }}>
           <li>an Ethereum wallet</li>
@@ -729,31 +983,59 @@ export default function Attest() {
             done={step > 1}
           />
 
-          {isConnected && <YourAttestations address={address} />}
+          {isConnected && (
+            <div className="attest-tabs" role="tablist">
+              <button role="tab" className={`attest-tab ${tab === 'claims' ? 'active' : ''}`} onClick={() => setTab('claims')}>
+                Your claims{myLoaded && activeClaims.length > 0 && <span className="attest-tab-count">{activeClaims.length}</span>}
+              </button>
+              <button role="tab" className={`attest-tab ${tab === 'new' ? 'active' : ''}`} onClick={() => setTab('new')}>
+                New claim
+              </button>
+            </div>
+          )}
 
-          <StepSignEth
-            active={step === 2}
-            done={step > 2}
-            fingerprint={ethData?.fingerprint}
-            onSigned={data => setEthData(data)}
-          />
+          {isConnected && tab === 'claims' && (
+            <YourAttestations address={address} attestations={myClaims} count={myCount} refetch={refetchMine} onCreate={() => setTab('new')} />
+          )}
 
-          <StepSignGpg
-            active={step === 3}
-            done={step > 3}
-            address={address}
-            expectedFingerprint={ethData?.fingerprint}
-            pgpSig={pgpSigText}
-            setPgpSig={setPgpSigText}
-            onVerified={data => setPgpData(data)}
-          />
+          {isConnected && tab === 'new' && (
+            <>
+              <StepEmailChoice
+                active={step === 2}
+                done={step > 2}
+                choice={emailChoice}
+                onChoose={setEmailChoice}
+              />
 
-          <StepAttest
-            active={step === 4}
-            done={published}
-            attestation={attestation}
-            onPublish={() => setPublished(true)}
-          />
+              <StepSignEth
+                active={step === 3}
+                done={step > 3}
+                fingerprint={ethData?.fingerprint}
+                onSigned={data => setEthData(data)}
+              />
+
+              <StepSignGpg
+                active={step === 4}
+                done={step > 4}
+                includeEmail={emailChoice === 'show'}
+                address={address}
+                expectedFingerprint={ethData?.fingerprint}
+                pgpSig={pgpSigText}
+                setPgpSig={setPgpSigText}
+                onVerified={data => setPgpData(data)}
+              />
+
+              <StepAttest
+                active={step === 5}
+                done={published}
+                attestation={attestation}
+                activeClaims={activeClaims}
+                replaceIndex={replaceIndex}
+                setReplaceIndex={setReplaceIndex}
+                onPublish={() => { setPublished(true); refetchMine() }}
+              />
+            </>
+          )}
       </div>
     </>
   )

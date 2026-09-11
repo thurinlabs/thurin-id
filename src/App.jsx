@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { version } from '../package.json'
 import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useEnsAvatar } from 'wagmi'
-import { createPublicClient, http, parseAbiItem, getAddress } from 'viem'
-import { mainnet } from 'wagmi/chains'
+import { createPublicClient, http, hexToString } from 'viem'
 import { normalize } from 'viem/ens'
-import { readKey } from 'openpgp'
-import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL } from './wagmiConfig'
+import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL } from './wagmiConfig'
+import { fingerprintHash, bytesToFingerprint, keyIdToBytes } from '@thurinlabs/identity-kit'
 import {
   ThurinCard,
   IdentityKitProvider,
@@ -21,28 +20,10 @@ import {
 import '@thurinlabs/identity-kit/styles'
 import Attest from './components/Attest'
 
-const mainnetClient = createPublicClient({
-  chain: mainnet,
-  transport: http(import.meta.env.VITE_ALCHEMY_RPC_URL),
+const chainClient = createPublicClient({
+  chain: CHAIN,
+  transport: http(RPC_URL),
 })
-
-const CONTRACT_DEPLOY_BLOCK = 24515891n
-const LOG_CHUNK_SIZE = 999999n
-
-async function getLogsChunked(params) {
-  const latest = await mainnetClient.getBlockNumber()
-  const fromBlock = params.fromBlock ?? CONTRACT_DEPLOY_BLOCK
-  const toBlock = params.toBlock === 'latest' ? latest : (params.toBlock ?? latest)
-  const allLogs = []
-
-  for (let start = fromBlock; start <= toBlock; start += LOG_CHUNK_SIZE) {
-    const end = start + LOG_CHUNK_SIZE - 1n > toBlock ? toBlock : start + LOG_CHUNK_SIZE - 1n
-    const logs = await mainnetClient.getLogs({ ...params, fromBlock: start, toBlock: end })
-    allLogs.push(...logs)
-  }
-
-  return allLogs
-}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -183,6 +164,12 @@ function Topbar({ isAttest }) {
           <line x1="81" y1="81" x2="92" y2="92" stroke="#c9a227" strokeWidth="3.5" strokeLinecap="round"/>
         </svg>
         <span className="topbar-wordmark">Thurin<span className="topbar-wordmark-accent">.id</span></span>
+        {NETWORK !== 'mainnet' && (
+          <span className="status-badge" title={`Reading the ${NETWORK} registry — nothing here touches mainnet`}
+            style={{ marginLeft: 10, fontSize: 10, borderColor: 'var(--color-secondary)', color: 'var(--color-secondary)' }}>
+            {NETWORK} testnet
+          </span>
+        )}
       </a>
       <div className="topbar-right">
         {isAttest ? (
@@ -204,36 +191,16 @@ function Topbar({ isAttest }) {
 
 function PgpKeyInfo({ armoredKey }) {
   const [keyInfo, setKeyInfo] = useState(null)
-  const [keySource, setKeySource] = useState(null) // 'keyserver' | 'on-chain'
   const [showKey, setShowKey] = useState(false)
   const [proofResults, setProofResults] = useState({})
 
+  // The on-chain key is the source of truth for the published identity and its
+  // proofs. No keyserver: keys.openpgp.org only serves email-verified user IDs
+  // and drops non-email ones, so it can't carry the published identity.
   useEffect(() => {
     if (!armoredKey) return
     let cancelled = false
-
-    async function load() {
-      // Parse the stored key first
-      const stored = await parsePgpKey(armoredKey)
-      if (cancelled || !stored) return
-
-      setKeyInfo(stored)
-      setKeySource('on-chain')
-
-      // Try to fetch a fresher version from keyserver
-      try {
-        const resp = await fetch(`https://keys.openpgp.org/vks/v1/by-fingerprint/${stored.fingerprint}`)
-        if (!resp.ok) return
-        const fresh = await parsePgpKey(await resp.text())
-        if (cancelled || !fresh) return
-        setKeyInfo(fresh)
-        setKeySource('keyserver')
-      } catch {
-        // Keyserver unavailable, keep stored key
-      }
-    }
-
-    load()
+    parsePgpKey(armoredKey).then((info) => { if (!cancelled && info) setKeyInfo(info) })
     return () => { cancelled = true }
   }, [armoredKey])
 
@@ -275,39 +242,14 @@ function PgpKeyInfo({ armoredKey }) {
     <div className="detail-history">
       <div className="detail-label">
         PGP Key Details
-        {keySource && (
-          <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginLeft: 8, fontWeight: 'normal' }}>
-            via {keySource === 'keyserver' ? 'keys.openpgp.org' : 'on-chain event log'}
-          </span>
-        )}
       </div>
 
       {keyInfo.userIDs.length > 0 && (
         <div className="mono-box" style={{ marginBottom: 2 }}>
-          <div className="label">User IDs</div>
-          {keyInfo.userIDs.map((uid, i) => (
-            <div key={i} className="value">{uid}</div>
-          ))}
-          {keySource === 'keyserver' ? (
-            <div style={{ marginTop: 6 }}>
-              <span
-                className="status-badge verified"
-                title="keys.openpgp.org verified the email address associated with this key — the key owner proved control of this email"
-              >
-                email verified
-              </span>
-            </div>
-          ) : keySource === 'on-chain' ? (
-            <div style={{ marginTop: 6 }}>
-              <span
-                className="status-badge"
-                style={{ opacity: 0.4, borderColor: 'var(--color-text-muted)', color: 'var(--color-text-muted)' }}
-                title="User IDs are from the on-chain key data — not independently verified by a keyserver"
-              >
-                self-declared
-              </span>
-            </div>
-          ) : null}
+          {/* Every user ID stored on-chain. The attest flow strips emails unless the
+              owner chose to include them, so what shows here is what they published. */}
+          <div className="label">Published identity</div>
+          {keyInfo.userIDs.map((uid, i) => <div key={i} className="value">{uid}</div>)}
         </div>
       )}
 
@@ -433,14 +375,16 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
             <div className="detail-address-row">
               <span className="detail-address">{address}</span>
               <button className="copy-btn" onClick={(e) => copyToClipboard(address, e)}>copy</button>
-              <a
-                className="detail-link"
-                href={`https://etherscan.io/address/${address}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                etherscan
-              </a>
+              {EXPLORER_URL && (
+                <a
+                  className="detail-link"
+                  href={`${EXPLORER_URL}/address/${address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  etherscan
+                </a>
+              )}
             </div>
             {ensName && <div className="detail-ens">{ensName}</div>}
           </div>
@@ -660,7 +604,7 @@ function EfpSection({ address }) {
 function EfpFollowItem({ address }) {
   const { data: ensName } = useEnsName({
     address,
-    chainId: mainnet.id,
+    chainId: CHAIN.id,
     query: { enabled: !!address },
   })
   return (
@@ -673,12 +617,12 @@ function EfpFollowItem({ address }) {
 function ClaimAddressCell({ address }) {
   const { data: ensName } = useEnsName({
     address,
-    chainId: mainnet.id,
+    chainId: CHAIN.id,
     query: { enabled: !!address },
   })
   const { data: ensAvatar } = useEnsAvatar({
     name: ensName ? safeNormalize(ensName) : undefined,
-    chainId: mainnet.id,
+    chainId: CHAIN.id,
     query: { enabled: !!ensName },
   })
   return (
@@ -710,45 +654,50 @@ function FingerprintDetail({ fingerprint }) {
 
     async function load() {
       try {
-        // fingerprintHash is indexed as keccak256 of the lowercase fingerprint
-        const logs = await getLogsChunked({
+        // v2: the registry indexes owners by keccak256 of the raw fingerprint bytes,
+        // and stores every claim's signature + key readably.
+        const fpLower = fingerprint.toLowerCase()
+        const owners = await chainClient.readContract({
           address: REGISTRY_ADDRESS,
-          event: parseAbiItem('event Attested(address indexed ethAddress, string indexed fingerprintHash, string fingerprint, string pgpSignature, string pgpPublicKey, uint256 index, uint256 timestamp)'),
-          fromBlock: CONTRACT_DEPLOY_BLOCK,
-          toBlock: 'latest',
+          abi: REGISTRY_ABI,
+          functionName: 'addressesFor',
+          args: [fingerprintHash(fpLower)],
         })
 
         if (cancelled) return
 
-        // Filter to matching fingerprint (case-insensitive) and check revocation status
         const matching = []
-        for (const log of logs) {
-          if (log.args.fingerprint.toUpperCase() !== fingerprint.toUpperCase()) continue
-          const addr = log.args.ethAddress
-          const idx = Number(log.args.index)
-
-          // Check if this attestation is still active
-          let revoked = false
-          try {
-            const [, , isRevoked] = await mainnetClient.readContract({
-              address: REGISTRY_ADDRESS,
-              abi: REGISTRY_ABI,
-              functionName: 'getAttestation',
-              args: [addr, BigInt(idx)],
-            })
-            revoked = isRevoked
-          } catch {}
-
-          matching.push({
-            address: addr,
-            index: idx,
-            fingerprint: log.args.fingerprint,
-            pgpSignature: log.args.pgpSignature,
-            pgpPublicKey: log.args.pgpPublicKey,
-            timestamp: Number(log.args.timestamp),
-            txHash: log.transactionHash,
-            revoked,
+        for (const addr of owners) {
+          const rows = await chainClient.readContract({
+            address: REGISTRY_ADDRESS,
+            abi: REGISTRY_ABI,
+            functionName: 'attestationsOf',
+            args: [addr],
           })
+          for (let idx = 0; idx < rows.length; idx++) {
+            const row = rows[idx]
+            if (bytesToFingerprint(row.fingerprint) !== fpLower) continue
+            let pgpSignature = null, pgpPublicKey = null
+            try {
+              const [sigHex, keyHex] = await chainClient.readContract({
+                address: REGISTRY_ADDRESS,
+                abi: REGISTRY_ABI,
+                functionName: 'getPayload',
+                args: [addr, BigInt(idx)],
+              })
+              pgpSignature = hexToString(sigHex)
+              pgpPublicKey = hexToString(keyHex)
+            } catch {}
+            matching.push({
+              address: addr,
+              index: idx,
+              fingerprint: fpLower,
+              pgpSignature,
+              pgpPublicKey,
+              timestamp: Number(row.createdAt),
+              revoked: Number(row.revokedAt) !== 0,
+            })
+          }
         }
 
         if (!cancelled) {
@@ -952,7 +901,7 @@ function Explorer() {
     }
   }, [])
 
-  // Resolve key ID (16 hex chars) → full fingerprint via keyserver
+  // Resolve key ID (16 hex chars) → full fingerprint via the registry's key-ID index
   const [keyIdResolving, setKeyIdResolving] = useState(false)
   const [keyIdError, setKeyIdError] = useState(null)
   useEffect(() => {
@@ -961,25 +910,29 @@ function Explorer() {
     setKeyIdResolving(true)
     setKeyIdError(null)
 
-    fetch(`https://keys.openpgp.org/vks/v1/by-keyid/${submitted.value}`)
-      .then(resp => {
-        if (!resp.ok) throw new Error('Key ID not found on keyserver')
-        return resp.text()
-      })
-      .then(armored => readKey({ armoredKey: armored }))
-      .then(key => {
+    const keyId = keyIdToBytes(submitted.value)
+    ;(async () => {
+      try {
+        if (!keyId) throw new Error('Not a valid key ID')
+        const fps = await chainClient.readContract({
+          address: REGISTRY_ADDRESS,
+          abi: REGISTRY_ABI,
+          functionName: 'fingerprintsForKeyId',
+          args: [keyId],
+        })
         if (cancelled) return
-        const fullFingerprint = key.getFingerprint().toUpperCase()
+        if (fps.length === 0) throw new Error('No attestation in the registry for this key ID')
+        const fullFingerprint = bytesToFingerprint(fps[0]).toUpperCase()
         setQuery(fullFingerprint)
         setSubmitted({ type: 'fingerprint', value: fullFingerprint })
         pushRoute('fingerprint', fullFingerprint)
         setKeyIdResolving(false)
-      })
-      .catch(err => {
+      } catch (err) {
         if (cancelled) return
         setKeyIdError(err.message)
         setKeyIdResolving(false)
-      })
+      }
+    })()
 
     return () => { cancelled = true }
   }, [submitted?.type, submitted?.value])
@@ -1009,7 +962,7 @@ function Explorer() {
     error: ensError,
   } = useEnsAddress({
     name: normalizedEns,
-    chainId: mainnet.id,
+    chainId: CHAIN.id,
     query: { enabled: !!normalizedEns },
   })
 
@@ -1021,95 +974,76 @@ function Explorer() {
     data: reverseEns,
   } = useEnsName({
     address: submitted?.type === 'address' ? submitted.value : undefined,
-    chainId: mainnet.id,
+    chainId: CHAIN.id,
     query: { enabled: submitted?.type === 'address' },
   })
 
   // ─── Contract reads ─────────────────────────────────────────────────────
 
-  // Step 1: Get attestation count
+  // Step 1: the owner's full history in one call (v2 `attestationsOf`)
   const {
-    data: attestationCount,
+    data: attestationRows,
     isLoading: countLoading,
     error: countError,
   } = useReadContract({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
-    functionName: 'attestationCount',
+    functionName: 'attestationsOf',
     args: lookupAddress ? [lookupAddress] : undefined,
-    chainId: mainnet.id,
+    chainId: CHAIN.id,
     query: { enabled: !!REGISTRY_ADDRESS && !!lookupAddress },
   })
 
-  // Step 2: Multicall all attestations
-  const count = attestationCount !== undefined ? Number(attestationCount) : 0
-  const attestationContracts = useMemo(() => {
+  const attestationCount = attestationRows !== undefined ? BigInt(attestationRows.length) : undefined
+  const count = attestationRows ? attestationRows.length : 0
+
+  // Step 2: the stored signature + key for each claim (`getPayload`, multicall)
+  const payloadContracts = useMemo(() => {
     if (!lookupAddress || !REGISTRY_ADDRESS || count === 0) return []
     return Array.from({ length: count }, (_, i) => ({
       address: REGISTRY_ADDRESS,
       abi: REGISTRY_ABI,
-      functionName: 'getAttestation',
+      functionName: 'getPayload',
       args: [lookupAddress, BigInt(i)],
-      chainId: mainnet.id,
+      chainId: CHAIN.id,
     }))
   }, [lookupAddress, count])
 
   const {
-    data: allAttestations,
-    isLoading: attestationsLoading,
+    data: payloads,
+    isLoading: payloadsLoading,
     error: attestationsError,
   } = useReadContracts({
-    contracts: attestationContracts,
-    query: { enabled: attestationContracts.length > 0 },
+    contracts: payloadContracts,
+    query: { enabled: payloadContracts.length > 0 },
   })
+  const attestationsLoading = countLoading || payloadsLoading
 
-  // Step 3: Fetch event logs for rich data (pgpSignature, pgpPublicKey)
-  const [eventLogs, setEventLogs] = useState({})
-  useEffect(() => {
-    if (!lookupAddress || !REGISTRY_ADDRESS || count === 0) return
-    let checksummed
-    try { checksummed = getAddress(lookupAddress) } catch { return }
-    getLogsChunked({
-      address: REGISTRY_ADDRESS,
-      event: parseAbiItem('event Attested(address indexed ethAddress, string indexed fingerprintHash, string fingerprint, string pgpSignature, string pgpPublicKey, uint256 index, uint256 timestamp)'),
-      args: { ethAddress: checksummed },
-      fromBlock: CONTRACT_DEPLOY_BLOCK,
-      toBlock: 'latest',
-    }).then(logs => {
-      const byIndex = {}
-      for (const log of logs) {
-        const idx = Number(log.args.index)
-        byIndex[idx] = {
-          pgpSignature: log.args.pgpSignature,
-          pgpPublicKey: log.args.pgpPublicKey,
-          txHash: log.transactionHash,
-        }
-      }
-      setEventLogs(byIndex)
-    }).catch(() => {})
-  }, [lookupAddress, count])
-
-  // Step 4: Post-process into display-ready data (newest first)
+  // Step 3: Post-process into display-ready data (newest first)
   const attestationsRaw = useMemo(() => {
-    if (!allAttestations) return []
-    return allAttestations
-      .map((item, index) => {
-        if (item.status !== 'success') return null
-        const [fingerprint, createdAt, revoked] = item.result
-        const event = eventLogs[index] || {}
+    if (!attestationRows) return []
+    return attestationRows
+      .map((row, index) => {
+        const p = payloads?.[index]
+        let pgpSignature = null, pgpPublicKey = null
+        if (p?.status === 'success') {
+          pgpSignature = hexToString(p.result[0])
+          pgpPublicKey = hexToString(p.result[1])
+        }
+        const revokedAt = Number(row.revokedAt)
         return {
           index,
-          fingerprint,
-          createdAt: Number(createdAt),
-          revoked,
-          pgpSignature: event.pgpSignature || null,
-          pgpPublicKey: event.pgpPublicKey || null,
-          txHash: event.txHash || null,
+          fingerprint: bytesToFingerprint(row.fingerprint),
+          createdAt: Number(row.createdAt),
+          revoked: revokedAt !== 0,
+          revokedAt: revokedAt || null,
+          messageVersion: Number(row.messageVersion),
+          pgpSignature,
+          pgpPublicKey,
         }
       })
-      .filter(Boolean)
       .reverse()
-  }, [allAttestations, eventLogs])
+  }, [attestationRows, payloads])
 
   // Step 5: Verify PGP proofs for each attestation
   const [verifications, setVerifications] = useState({})
@@ -1127,7 +1061,7 @@ function Explorer() {
             ethAddress: lookupAddress,
           })
         } else {
-          results[att.index] = { verified: false, reason: 'No PGP data in event logs' }
+          results[att.index] = { verified: false, reason: 'No PGP data stored' }
         }
       }
       if (!cancelled) setVerifications(results)
@@ -1156,7 +1090,7 @@ function Explorer() {
 
   const { data: ensAvatar } = useEnsAvatar({
     name: displayEns ? safeNormalize(displayEns) : undefined,
-    chainId: mainnet.id,
+    chainId: CHAIN.id,
     query: { enabled: !!displayEns },
   })
 
@@ -1200,8 +1134,9 @@ function Explorer() {
             <h2 className="homepage-headline">See the full picture behind any Ethereum identity</h2>
             <div className="homepage-cards">
               <IdentityKitProvider
-                rpcUrl={import.meta.env.VITE_ALCHEMY_RPC_URL}
+                rpcUrl={RPC_URL}
                 neynarApiKey={import.meta.env.VITE_NEYNAR_API_KEY}
+                network={NETWORK}
               >
                 <ThurinCard ens="vitalik.eth" theme={cardTheme} />
                 <ThurinCard ens="bendoubleu.eth" theme={cardTheme} />
