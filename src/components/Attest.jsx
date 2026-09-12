@@ -57,7 +57,7 @@ function StepConnect({ active, done }) {
       </div>
 
       {!isConnected && (
-        <p className="helper">Connect your wallet to get started. Your address will be sealed into the identity claim. Already have one? <a href="/" rel="noopener noreferrer">Look it up</a>.</p>
+        <p className="helper">Connect your wallet to get started. The claim is published from this address, so it has to be yours. Already have a claim? <a href="/" rel="noopener noreferrer">Look it up</a>.</p>
       )}
 
       <ConnectButton showBalance={false} />
@@ -82,7 +82,7 @@ function StepEmailChoice({ active, done, choice, onChoose }) {
       id: 'show',
       title: 'Include my email',
       tag: 'if it\'s already public',
-      body: 'Your full key goes on-chain, email and all — the same key people find on keyservers, importable and usable to encrypt to you by address. Choose this if your email is already public; it can\'t be removed later.',
+      body: 'Your full key goes on-chain, email and all, so people can encrypt to you at that address. Choose this only if your email is already public. It can\'t be removed later.',
     },
   ]
   return (
@@ -329,7 +329,7 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
     <div className={`step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
         <span className={`step-num ${active ? 'active-num' : ''}`}>04 //</span>
-        <span className="step-title">Sign ETH Address with PGP</span>
+        <span className="step-title">Sign your address with your key</span>
         {done && <span className="step-badge">✓ complete</span>}
       </div>
 
@@ -344,7 +344,8 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
             </div>
           )}
 
-          <p className="helper">1. Sign your Ethereum address with your PGP key:</p>
+          <p className="helper">This step proves the key is yours: your PGP key signs a line naming your address.</p>
+          <p className="helper" style={{ marginTop: 12 }}>1. Sign your Ethereum address with your PGP key:</p>
           <div className="command-block"><span className="prompt">$ </span>{command}</div>
           <button className="btn btn-sm" onClick={(e) => copyToClipboard(command, e)} style={{ marginTop: 8 }}>copy command</button>
           <p className="helper" style={{ marginTop: 12 }}>
@@ -430,7 +431,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
     <div className={`step`}>
       <div className="step-header">
         <span className="step-num">05 //</span>
-        <span className="step-title">Generate & Publish Identity Claim</span>
+        <span className="step-title">Publish</span>
       </div>
     </div>
   )
@@ -493,14 +494,14 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
     <div className={`step ${active && !done ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
         <span className={`step-num ${active && !done ? 'active-num' : ''}`}>05 //</span>
-        <span className="step-title">Generate & Publish Identity Claim</span>
-        {done && <span className="step-badge">✓ sealed</span>}
+        <span className="step-title">Publish</span>
+        {done && <span className="step-badge">✓ published</span>}
       </div>
 
       {done && attestation && (
         <div className="fade-in">
           <div className="status ok">
-            Identity claim sealed on-chain. Your ETH address and PGP key are now cryptographically linked.
+            Your claim is on-chain. Your address and your PGP key now point at each other, and anyone can check it.
           </div>
 
           <div style={{ marginTop: 16 }} className="row">
@@ -530,9 +531,8 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
       {active && !done && attestation && (
         <div className="fade-in">
           <p className="helper">
-            Your PGP signature is verified. This JSON is your identity claim — a cryptographic proof that your
-            ETH wallet and PGP key are controlled by the same person. Publishing it from your connected wallet
-            completes the binding on-chain and makes it queryable.
+            Your signature checks out. This step proves the address is yours: publishing from your connected
+            wallet puts the claim on-chain, and only that wallet can do it. This is what will be stored:
           </p>
 
           <div className="attestation-output">
@@ -548,8 +548,8 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
           <hr className="divider" />
 
           <p className="helper">
-            The contract stores your address, the fingerprint, the signature, and the key — readable by
-            anyone from any Ethereum node, forever.
+            Your address, the fingerprint, the signed line, and the key. Readable by anyone, from any Ethereum
+            node, for good. It can be revoked later but not erased.
           </p>
 
           {activeClaims.length > 0 && (
@@ -645,9 +645,10 @@ function useMyAttestations(address) {
   return { attestations, count, refetch, loaded }
 }
 
-/** Paste a fresh export → strip emails → `updateKey`. Same key, new notations, no new signature. */
-function UpdateKeyPanel({ claim, address, onDone, onCancel }) {
+/** Paste a fresh export → (strip emails unless included) → `updateKey`. Same key, new notations, no new signature. */
+function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel }) {
   const [keyText, setKeyText] = useState('')
+  const [withEmail, setWithEmail] = useState(hasEmail) // defaults to what the claim holds today
   const [preview, setPreview] = useState(null)
   const [status, setStatus] = useState(null)
   const [result, setResult] = useState(null) // { hash, proofs, kept } once the update is confirmed
@@ -667,15 +668,21 @@ function UpdateKeyPanel({ claim, address, onDone, onCancel }) {
         setStatus({ type: 'err', msg: `That key's fingerprint (${info.fingerprint}) is not this claim's key.` })
         return
       }
-      const stripped = await stripEmailUserIDs(text)
-      if (cancelled) return
-      if (!stripped) { setStatus({ type: 'err', msg: 'This key has no name without an email. Add one (gpg --quick-add-uid <fingerprint> thurin), re-export, and paste again.' }); return }
-      const published = await parsePgpKey(stripped.armored)
+      let armored, kept, removed
+      if (withEmail) {
+        armored = text; kept = info.userIDs; removed = []
+      } else {
+        const stripped = await stripEmailUserIDs(text)
+        if (cancelled) return
+        if (!stripped) { setStatus({ type: 'err', msg: 'This key has no name without an email. Add one (gpg --quick-add-uid <fingerprint> thurin), re-export, and paste again — or tick "Include my email".' }); return }
+        armored = stripped.armored; kept = stripped.kept; removed = stripped.removed
+      }
+      const published = await parsePgpKey(armored)
       const proofs = (published?.notations || []).filter(n => identifyProof(n)).length
-      setPreview({ armored: stripped.armored, kept: stripped.kept, removed: stripped.removed, proofs, bytes: new TextEncoder().encode(stripped.armored).length })
+      setPreview({ armored, kept, removed, proofs, bytes: new TextEncoder().encode(armored).length })
     })()
     return () => { cancelled = true }
-  }, [keyText, claim.fingerprint])
+  }, [keyText, claim.fingerprint, withEmail])
 
   const handleUpdate = async () => {
     if (!preview) return
@@ -726,8 +733,21 @@ function UpdateKeyPanel({ claim, address, onDone, onCancel }) {
     <div className="update-panel fade-in">
       <p className="helper">
         Update the key on claim #{claim.index}. Add or change proof notations on your published name, then
-        export the same key and paste it below. Email names are left out automatically. No new signature is needed.
+        export the same key and paste it below. No new signature is needed.
       </p>
+      <p className="helper" style={{ marginTop: 12 }}>Your email. Pick one:</p>
+      <div className="choice-cards">
+        <button type="button" className={`choice-card ${!withEmail ? 'selected' : ''}`} onClick={() => { setWithEmail(false); setStatus(null) }}>
+          <span className="choice-tag">{hasEmail ? 'removes it' : 'as it is now'}</span>
+          <h3>Keep my email off-chain</h3>
+          <p>Only the names without an email go on-chain.</p>
+        </button>
+        <button type="button" className={`choice-card ${withEmail ? 'selected' : ''}`} onClick={() => { setWithEmail(true); setStatus(null) }}>
+          <span className="choice-tag">{hasEmail ? 'as it is now' : 'adds it'}</span>
+          <h3>Include my email</h3>
+          <p>The whole key goes on-chain, email and all. It can't be removed later.</p>
+        </button>
+      </div>
 
       <p className="helper" style={{ marginTop: 12 }}>1. Export your public key:</p>
       <div className="command-block"><span className="prompt">$ </span>{exportCommand}</div>
@@ -787,10 +807,10 @@ function YourAttestations({ address, attestations, count, refetch, onCreate }) {
   if (count === 0) return (
     <div className="step active">
       <div className="step-header">
-        <span className="step-title">Your Identity Claims</span>
+        <span className="step-title">Your claims</span>
         <span className="step-badge">none yet</span>
       </div>
-      <p className="helper">This wallet has no identity claim yet.</p>
+      <p className="helper">This wallet has no claim yet.</p>
       <button className="btn btn-primary" onClick={onCreate}>Create your first claim</button>
     </div>
   )
@@ -824,7 +844,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate }) {
   return (
     <div className="step active">
       <div className="step-header">
-        <span className="step-title">Your Identity Claims</span>
+        <span className="step-title">Your claims</span>
         <span className="step-badge">{activeCount} active</span>
       </div>
 
@@ -876,9 +896,9 @@ function YourAttestations({ address, attestations, count, refetch, onCreate }) {
                 <tr className="att-note-row">
                   <td colSpan={5} style={{ padding: '0 16px 10px' }}>
                     {!a.revoked && emailByIndex[a.index] && (
-                      <div className="status err" style={{ fontSize: '12px', margin: 0 }}
-                        title="The key stored on this claim carries an email user ID. Updating the key replaces what the explorer shows; the old copy stays in chain history.">
-                        Contains your email — update the key with a copy that leaves it out
+                      <div className="lookup-detected" style={{ fontSize: '12px', margin: 0 }}
+                        title="The key stored on this claim carries an email user ID. Update the key with 'Keep my email off-chain' to publish a copy without it; the old copy stays in chain history.">
+                        Email included on this claim
                       </div>
                     )}
                     {revokeStatus[a.index] && revokeStatus[a.index].type !== 'info' && (
@@ -892,7 +912,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate }) {
               {updating === a.index && !a.revoked && (
                 <tr key={`${a.index}-update`} className="att-update-row">
                   <td colSpan={5} style={{ padding: '4px 8px 12px' }}>
-                    <UpdateKeyPanel claim={a} address={address} onDone={refetch} onCancel={() => setUpdating(null)} />
+                    <UpdateKeyPanel claim={a} address={address} hasEmail={!!emailByIndex[a.index]} onDone={refetch} onCancel={() => setUpdating(null)} />
                   </td>
                 </tr>
               )}
@@ -959,22 +979,27 @@ export default function Attest() {
   return (
     <>
       <div className="attest-intro" style={{ maxWidth: 640, margin: '0 auto', padding: '0 16px' }}>
-        <p className="helper">
-          <strong>Attesting</strong> binds your Ethereum address and your PGP key (your encryption key)
-          into one verifiable identity — the two vouch for each other, anchored on-chain. Once sealed,
-          your address, PGP key, and social proofs resolve as a single identity on thurin.id, with a card
-          you can embed anywhere.
-        </p>
-        <p className="helper">
-          Published on-chain: your address, your key's fingerprint, one name from your key, and the proofs on it.
-          Your email stays off-chain unless you choose otherwise.
-        </p>
-        <p className="helper">To create a claim you'll need:</p>
-        <ul className="helper" style={{ margin: '8px 0 24px 20px', lineHeight: 1.7 }}>
-          <li>an Ethereum wallet</li>
-          <li>a PGP key, with <code>gpg</code> in a terminal <em>(desktop only)</em></li>
-          <li>some ETH for gas</li>
-        </ul>
+        {isConnected && myLoaded && activeClaims.length > 0 ? (
+          <p className="helper">
+            Attest links your Ethereum address to your PGP key. This wallet already has a claim:
+            update or replace it under <strong>Your claims</strong>, or make a new one.
+          </p>
+        ) : (
+          <>
+            <p className="helper">
+              Attest links your Ethereum address to your PGP key, so anyone can check that both belong to
+              the same person. It takes a few minutes and one transaction.
+            </p>
+            <p className="helper">
+              What goes on-chain: your address, your key's fingerprint, one name from your key, and the
+              proofs on it. Your email stays off unless you say so.
+            </p>
+            <p className="helper" style={{ marginBottom: 24 }}>
+              You'll need a wallet, a PGP key with <code>gpg</code> in a terminal <em>(desktop only)</em>,
+              and a little ETH for the fee.
+            </p>
+          </>
+        )}
       </div>
 
       <div className="steps">

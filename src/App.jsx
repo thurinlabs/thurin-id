@@ -18,7 +18,9 @@ import {
   fetchEFPGraph,
 } from '@thurinlabs/identity-kit'
 import '@thurinlabs/identity-kit/styles'
+import { siteLinks } from './links'
 import Attest from './components/Attest'
+import LookupPreview from './components/LookupPreview'
 
 const chainClient = createPublicClient({
   chain: CHAIN,
@@ -299,11 +301,7 @@ function PgpKeyInfo({ armoredKey }) {
 
       <div className="mono-box" style={{ marginBottom: 2 }}>
         <div className="label">Key Info</div>
-        <div className="value">{typeof keyInfo.algorithm === 'number' ? ({
-          1: 'RSA', 2: 'RSA (encrypt)', 3: 'RSA (sign)',
-          16: 'Elgamal', 17: 'DSA', 18: 'ECDH',
-          19: 'ECDSA', 22: 'EdDSA (Ed25519)',
-        }[keyInfo.algorithm] || `Algorithm ${keyInfo.algorithm}`) : keyInfo.algorithm}</div>
+        <div className="value">{keyInfo.algorithm}</div>
         <div style={{ marginTop: 4 }}>
           <span style={{ color: 'var(--color-text-muted)' }}>Created: </span>
           <span className="value">{keyInfo.created ? new Date(keyInfo.created).toLocaleDateString() : '—'}</span>
@@ -864,6 +862,7 @@ function FingerprintDetail({ fingerprint }) {
 // ─── Explorer ───────────────────────────────────────────────────────────────
 
 function Explorer() {
+  const links = useMemo(() => siteLinks(), [])
   const [query, setQuery] = useState(() => parseRoute()?.value || '')
   const [submitted, setSubmitted] = useState(() => parseRoute())
   const [cardTheme, setCardTheme] = useState(
@@ -877,7 +876,6 @@ function Explorer() {
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => observer.disconnect()
   }, [])
-
   const inputType = detectInputType(query)
 
   // On mount + popstate, parse route and auto-submit
@@ -936,6 +934,62 @@ function Explorer() {
 
     return () => { cancelled = true }
   }, [submitted?.type, submitted?.value])
+
+  // ─── Live preview of what is being typed ────────────────────────────────
+  // Debounced so a keystroke burst is one lookup; cleared once a lookup is submitted.
+  const [preview, setPreview] = useState(null)
+  useEffect(() => {
+    if (submitted || !inputType) { setPreview(null); return }
+    const value = query.trim()
+    const id = setTimeout(() => setPreview({ type: inputType, value }), 350)
+    return () => clearTimeout(id)
+  }, [query, inputType, submitted])
+
+  const previewEns = preview?.type === 'ens' ? safeNormalize(preview.value) : null
+  const { data: previewEnsAddress, isLoading: previewEnsLoading, isFetched: previewEnsFetched } = useEnsAddress({
+    name: previewEns || undefined,
+    chainId: CHAIN.id,
+    query: { enabled: !!previewEns },
+  })
+
+  // Fingerprint / key ID → address through the registry's own indexes.
+  const [previewIndexed, setPreviewIndexed] = useState({ key: null, address: null, done: false })
+  useEffect(() => {
+    if (!preview || (preview.type !== 'fingerprint' && preview.type !== 'keyId')) return
+    let cancelled = false
+    const key = `${preview.type}:${preview.value}`
+    setPreviewIndexed({ key, address: null, done: false })
+    ;(async () => {
+      try {
+        let fps
+        if (preview.type === 'keyId') {
+          const keyId = keyIdToBytes(preview.value)
+          fps = keyId ? await chainClient.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'fingerprintsForKeyId', args: [keyId] }) : []
+        } else {
+          fps = ['0x' + preview.value.toLowerCase()]
+        }
+        let found = null
+        for (const fp of fps) {
+          const owners = await chainClient.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'addressesFor', args: [fingerprintHash(fp)] })
+          if (owners.length) { found = owners[owners.length - 1]; break }
+        }
+        if (!cancelled) setPreviewIndexed({ key, address: found, done: true })
+      } catch {
+        if (!cancelled) setPreviewIndexed({ key, address: null, done: true })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [preview?.type, preview?.value])
+
+  const previewAddress = !preview ? null
+    : preview.type === 'address' ? preview.value
+    : preview.type === 'ens' ? (previewEnsAddress || null)
+    : (previewIndexed.key === `${preview.type}:${preview.value}` ? previewIndexed.address : null)
+  const previewResolving = !!preview && !previewAddress && (
+    preview.type === 'ens' ? previewEnsLoading || !previewEnsFetched
+    : preview.type === 'address' ? false
+    : !(previewIndexed.key === `${preview.type}:${preview.value}` && previewIndexed.done))
+  const previewNotFound = !!preview && !previewAddress && !previewResolving
 
   const handleLookup = useCallback(() => {
     if (!inputType) return
@@ -1096,11 +1150,21 @@ function Explorer() {
 
   return (
     <>
-      <div className="search-section">
+      {!submitted && (
+        <section className="home-hero">
+          <h1 className="home-tagline">Prove more.</h1>
+          <h1 className="home-tagline home-tagline-2">Reveal less.</h1>
+          <p className="home-lede">
+            Prove an online identity is really yours. Anyone can check it, no company
+            holds it, and nothing about you goes public unless you choose.
+          </p>
+        </section>
+      )}
+      <div className={submitted ? 'search-section' : 'search-section search-section-home'}>
         <div className="lookup-input-row">
           <input
             className="text-input"
-            placeholder="0x address, ENS name, or PGP fingerprint"
+            placeholder="ENS name, Ethereum address, or PGP fingerprint"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -1121,33 +1185,70 @@ function Explorer() {
           </div>
         )}
 
-        {query.trim() && inputType && (
+        {query.trim() && inputType && (submitted || !preview) && (
           <div className="lookup-detected" style={{ marginTop: 8 }}>
             Detected: <span className="lookup-type">{inputType === 'keyId' ? 'key ID' : inputType}</span>
           </div>
         )}
         {!submitted && (
           <>
-            <p className="helper" style={{ marginTop: 16, marginBottom: 0, textAlign: 'center' }}>
-              Don't have an identity claim yet? <a href="/attest">Create one</a>.
-            </p>
-            <h2 className="homepage-headline">See the full picture behind any Ethereum identity</h2>
-            <div className="homepage-cards">
+            {preview && (
               <IdentityKitProvider
                 rpcUrl={RPC_URL}
                 neynarApiKey={import.meta.env.VITE_NEYNAR_API_KEY}
                 network={NETWORK}
               >
-                <ThurinCard ens="vitalik.eth" theme={cardTheme} />
-                <ThurinCard ens="bendoubleu.eth" theme={cardTheme} />
+                <LookupPreview
+                  key={`${preview.type}:${preview.value}`}
+                  address={previewAddress}
+                  name={preview.type === 'ens' ? preview.value : null}
+                  resolving={previewResolving}
+                  notFound={previewNotFound}
+                  neynarApiKey={import.meta.env.VITE_NEYNAR_API_KEY}
+                  onOpen={handleLookup}
+                />
               </IdentityKitProvider>
-            </div>
-            <p className="homepage-cta">
-              Add your identity to any website. <a href="https://docs.thurin.id/#/sdk" target="_blank" rel="noopener noreferrer">Get the embed</a>.
-            </p>
+            )}
           </>
         )}
       </div>
+
+      {!submitted && (
+        <>
+          <IdentityKitProvider
+            rpcUrl={RPC_URL}
+            neynarApiKey={import.meta.env.VITE_NEYNAR_API_KEY}
+            network={NETWORK}
+            baseUrl={links.self}
+          >
+            <section className="home-cards">
+              <ThurinCard ens="thurinlabs.eth" theme={cardTheme} />
+              <ThurinCard ens="vitalik.eth" theme={cardTheme} />
+            </section>
+            <p className="home-cards-link">
+              <a href={`${links.docs}/#/sdk`} target="_blank" rel="noopener noreferrer">Put your own card on any site →</a>
+            </p>
+          </IdentityKitProvider>
+          <section className="home-rules">
+            <div className="home-rule">
+              <h3>Nothing in the middle.</h3>
+              <p>There is no Thurin server holding your identity. It lives on Ethereum, a public record no company controls, and your browser checks it directly.</p>
+            </div>
+            <div className="home-rule">
+              <h3>Your key stays put.</h3>
+              <p>It is stored where you published it, so it can’t be swapped, lost, or quietly changed by someone else.</p>
+            </div>
+            <div className="home-rule">
+              <h3>Your email stays private.</h3>
+              <p>Nothing about you goes public unless you choose it. Publish a name, not a life.</p>
+            </div>
+          </section>
+          <section className="home-close">
+            <p>Want your own? <a href="/attest">Attest</a> takes a few minutes and one transaction.</p>
+            <a className="home-roadmap" href={`${links.docs}/#/roadmap`} target="_blank" rel="noopener noreferrer">What’s coming: the roadmap →</a>
+          </section>
+        </>
+      )}
 
       <div className="lookup-results">
         {/* Key ID resolving */}
@@ -1262,9 +1363,10 @@ function Explorer() {
 
 export default function App() {
   const isAttest = typeof window !== 'undefined' && window.location.pathname.startsWith('/attest')
+  const links = useMemo(() => siteLinks(), [])
 
   useEffect(() => {
-    document.title = isAttest ? 'Thurin.id — Attest' : 'Thurin.id — Identity Explorer'
+    document.title = isAttest ? 'Thurin.id — Attest' : 'Thurin.id — Prove more. Reveal less.'
   }, [isAttest])
 
   return (
@@ -1278,9 +1380,9 @@ export default function App() {
         <div className="footer-columns">
           <div className="footer-col">
             <span className="footer-col-label">Home</span>
-            <a href="https://thurinlabs.id" target="_blank" rel="noopener noreferrer">Thurin Labs</a>
+            <a href={links.company} target="_blank" rel="noopener noreferrer">Thurin Labs</a>
             <a href="/attest">Attest</a>
-            <a href="https://thurinlabs.id/privacy/" target="_blank" rel="noopener noreferrer">Privacy</a>
+            <a href={links.privacy} target="_blank" rel="noopener noreferrer">Privacy</a>
           </div>
           <div className="footer-col">
             <span className="footer-col-label">Social</span>
@@ -1292,7 +1394,8 @@ export default function App() {
             <span className="footer-col-label">Dev</span>
             <a href="https://github.com/thurinlabs" target="_blank" rel="noopener noreferrer">GitHub</a>
             <a href="https://codeberg.org/thurinlabs" target="_blank" rel="noopener noreferrer">Codeberg</a>
-            <a href="https://docs.thurin.id" target="_blank" rel="noopener noreferrer">Docs</a>
+            <a href={links.docs} target="_blank" rel="noopener noreferrer">Docs</a>
+            <a href={`${links.docs}/#/roadmap`} target="_blank" rel="noopener noreferrer">Roadmap</a>
           </div>
         </div>
       </footer>

@@ -25,6 +25,9 @@ export const RPC_URL = NETWORK === 'local'
     ? (import.meta.env.VITE_SEPOLIA_RPC_URL || (MAINNET_RPC || '').replace('eth-mainnet', 'eth-sepolia') || REGISTRY.defaultRpcUrl)
     : (MAINNET_RPC || REGISTRY.defaultRpcUrl)
 
+// One chain per build. Offering a second one (tried for phone wallets without testnets)
+// let the app sit on the wrong network without complaint; with a single chain RainbowKit
+// shows "Wrong network" and offers the switch, and every write is pinned to CHAIN.id.
 export const config = getDefaultConfig({
   appName: 'Thurin',
   projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID,

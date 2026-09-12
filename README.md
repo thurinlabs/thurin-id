@@ -30,11 +30,11 @@ VITE_ALCHEMY_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 VITE_NEYNAR_API_KEY=YOUR_NEYNAR_KEY
 ```
 
-Without `VITE_ALCHEMY_RPC_URL` the app builds, but the homepage cards render with no verified proofs (public RPCs throttle `eth_getLogs`).
+`VITE_ALCHEMY_RPC_URL` is optional for reads (the v2 registry needs only `eth_call`, so the keyless public default works); it is still the RPC the wallet flow uses.
 
 ## Running against a local chain or Sepolia
 
-The PGPRegistry v2 has the same address on every network (`0x3F42806de924d3f22538ea5bC2B0b3860D27f5bB`). Set `VITE_CHAIN` and every chain-specific piece — wallet chain, RPC, explorer links — follows; the topbar shows a testnet badge.
+The PGPRegistry v2 has the same address on every network (`0x9302E02e2869e129aC8516fE5eFFd51EA3082c09`). Set `VITE_CHAIN` and every chain-specific piece — wallet chain, RPC, explorer links — follows; the topbar shows a testnet badge.
 
 **Local (fastest):** run `anvil`, deploy the registry from the `pgp-registry` repo (`forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --private-key <anvil key> --broadcast`), import an anvil test account into your wallet and add a network for `http://127.0.0.1:8545` (chain id 31337), then:
 
