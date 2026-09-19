@@ -5,12 +5,16 @@ import {
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
   attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData,
 } from '@thurinlabs/identity-kit'
-import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL } from '../wagmiConfig'
+import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 
 // Publish someone else's authorized write. The owner signed the typed data in the CLI
 // (`thurin attest --authorize`); this panel rebuilds that typed data from the hand-off,
 // recovers the signer, checks the nonce and deadline against the chain, verifies the PGP
 // side the way a lookup would, and then lets *any* connected wallet pay for the `…For` call.
+
+// A relayer (`thurin relay`) that pays on the viewer's behalf. Unset = no button; the
+// viewer's own wallet is always the other path.
+const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || ''
 
 const VERBS = { attest: 'Publish a claim', reattest: 'Replace a claim', 'update-key': 'Update a key', revoke: 'Revoke a claim' }
 const FNS = { attest: 'attestFor', reattest: 'reattestFor', 'update-key': 'updateKeyFor', revoke: 'revokeFor' }
@@ -102,6 +106,22 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
     return () => { cancelled = true }
   }, [h, chainNonce, nonceFetched, rows, target])
 
+  const handleRelay = async () => {
+    try {
+      setStatus({ type: 'info', msg: 'Asking the relayer to publish…' })
+      const body = { v: 1, op: h.op, network: NETWORK, owner: h.owner, fingerprint: h.fingerprint, includeEmail: h.includeEmail,
+        ...(h.key ? { key: h.key } : {}), ...(h.signature ? { signature: h.signature } : {}), ...(h.index !== null ? { index: h.index } : {}),
+        authorization: h.authorization }
+      const resp = await fetch(RELAYER_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      const data = await resp.json().catch(() => ({}))
+      if (!resp.ok) { setStatus({ type: 'err', msg: `The relayer declined: ${data.error || resp.statusText}. You can still publish from your own wallet.` }); return }
+      setTxHash(data.hash)
+      setStatus({ type: 'ok', msg: '✓ Published by the relayer.' }); setDone(true); refetchNonce()
+    } catch (err) {
+      setStatus({ type: 'err', msg: `Could not reach the relayer: ${err.message}. You can still publish from your own wallet.` })
+    }
+  }
+
   const handlePublish = async () => {
     try {
       setStatus({ type: 'info', msg: 'Sending transaction…' })
@@ -168,9 +188,19 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
             link before it expires, and it can be used once.
           </p>
 
-          <button className="btn btn-primary" onClick={handlePublish} disabled={!isConnected || !check?.ok || status?.type === 'info'}>
-            {status?.type === 'info' ? 'Publishing…' : `Publish for ${shortAddr(h.owner)}`}
-          </button>
+          <div className="row">
+            <button className="btn btn-primary" onClick={handlePublish} disabled={!isConnected || !check?.ok || status?.type === 'info'}>
+              {status?.type === 'info' ? 'Publishing…' : `Publish for ${shortAddr(h.owner)}`}
+            </button>
+            {RELAYER_URL && (
+              <button className="btn" onClick={handleRelay} disabled={!check?.ok || status?.type === 'info'} title="Thurin's relayer pays the fee, within its daily budget">
+                Have Thurin publish it
+              </button>
+            )}
+          </div>
+          {RELAYER_URL && !isConnected && check?.ok && (
+            <p className="helper" style={{ marginTop: 8 }}>No wallet? "Have Thurin publish it" pays the fee from Thurin's relayer, within its daily budget.</p>
+          )}
 
           {status && <div className={`status ${status.type}`}>{status.msg}</div>}
         </div>
