@@ -69,3 +69,7 @@ The explorer reads attestations straight from the `PGPRegistry` contract — his
 ## IPFS
 
 The build output (`npm run build`) is a static `dist/` folder with relative asset paths — pin it to IPFS directly.
+
+## License
+
+MIT
