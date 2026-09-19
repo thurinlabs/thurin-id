@@ -6,6 +6,7 @@ import { createPublicClient, http, stringToHex, hexToString } from 'viem'
 import { stripEmailUserIDs, hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 import { readHandoff } from '../handoff'
+import SubmitAuthorization from './SubmitAuthorization'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -968,9 +969,12 @@ export default function Attest() {
     try { return [readHandoff(), null] } catch (e) { return [null, e.message] }
   }, [])
   const handoffNetworkOk = !handoff || handoff.network === NETWORK
-  const claimHandoff = handoff && handoffNetworkOk && handoff.op !== 'update-key' ? handoff : null   // attest | reattest
-  const updateHandoff = handoff && handoffNetworkOk && handoff.op === 'update-key' ? handoff : null
-  const wrongWallet = !!(handoff && isConnected && address && address.toLowerCase() !== handoff.owner)
+  // An authorized hand-off is published by *any* wallet through the `…For` calls; the
+  // plain kind needs the owner's wallet and flows through the wizard below.
+  const authorized = handoff && handoffNetworkOk && handoff.authorization ? handoff : null
+  const claimHandoff = handoff && handoffNetworkOk && !authorized && handoff.op !== 'update-key' ? handoff : null   // attest | reattest
+  const updateHandoff = handoff && handoffNetworkOk && !authorized && handoff.op === 'update-key' ? handoff : null
+  const wrongWallet = !!(handoff && !authorized && isConnected && address && address.toLowerCase() !== handoff.owner)
   // The fragment is read once; a new link pasted over this page should start over.
   useEffect(() => {
     const onHash = () => window.location.reload()
@@ -1034,6 +1038,13 @@ export default function Attest() {
             This link was made for <strong>{handoff.network}</strong>, but this page publishes to <strong>{NETWORK}</strong>.
             Run the command again with <code>--network {NETWORK}</code>, or open the link on a {handoff.network} build.
           </div>
+        ) : authorized ? (
+          <p className="helper" style={{ marginBottom: 24 }}>
+            This link came from the Thurin CLI. <strong>{shortAddr(authorized.owner)}</strong> has already signed
+            {authorized.op === 'attest' ? ' a claim' : authorized.op === 'reattest' ? ' a replacement claim' : authorized.op === 'update-key' ? ' a key update' : ' a revocation'},
+            so any wallet can publish it and pay the fee. Connect yours, check what it says, and publish.
+            Nothing was sent anywhere; the part of the link after <code>#</code> stays in this browser.
+          </p>
         ) : handoff ? (
           <>
             <p className="helper">
@@ -1081,7 +1092,9 @@ export default function Attest() {
             done={step > 1}
           />
 
-          {isConnected && (
+          {authorized && <SubmitAuthorization handoff={authorized} isConnected={isConnected} />}
+
+          {isConnected && !authorized && (
             <div className="attest-tabs" role="tablist">
               <button role="tab" className={`attest-tab ${tab === 'claims' ? 'active' : ''}`} onClick={() => setTab('claims')}>
                 Your claims{myLoaded && activeClaims.length > 0 && <span className="attest-tab-count">{activeClaims.length}</span>}
@@ -1092,11 +1105,11 @@ export default function Attest() {
             </div>
           )}
 
-          {isConnected && tab === 'claims' && (
+          {isConnected && !authorized && tab === 'claims' && (
             <YourAttestations address={address} attestations={myClaims} count={myCount} refetch={refetchMine} onCreate={() => setTab('new')} handoff={!wrongWallet ? updateHandoff : null} />
           )}
 
-          {isConnected && tab === 'new' && (
+          {isConnected && !authorized && tab === 'new' && (
             <>
               <StepEmailChoice
                 active={step === 2}

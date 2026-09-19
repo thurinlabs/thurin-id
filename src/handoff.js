@@ -3,8 +3,13 @@
 // fragment, fills the signature and key in, and lets the connected wallet publish.
 // A fragment never reaches a server, so the payload goes from that terminal to this
 // browser and nowhere else. Format mirrors thurin-cli/src/lib/handoff.ts (v1).
+//
+// With `authorization` (from `--authorize`) the owner has already signed the write as
+// EIP-712 typed data, so *any* wallet can publish it through the registry's `…For`
+// functions and pay the fee. The typed data is rebuilt from the other fields, never
+// carried, so what the page shows is what was signed.
 
-const OPS = ['attest', 'reattest', 'update-key']
+const OPS = ['attest', 'reattest', 'update-key', 'revoke']
 
 function fromBase64Url(s) {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/')
@@ -23,11 +28,22 @@ export function readHandoff() {
   if (!OPS.includes(h.op)) throw new Error(`Unknown hand-off operation "${h.op}".`)
   if (!/^0x[0-9a-f]{40}$/.test(h.owner || '')) throw new Error('The hand-off has no valid owner address.')
   if (!/^[0-9A-F]{40}$/.test(h.fingerprint || '')) throw new Error('The hand-off has no valid fingerprint.')
-  if (typeof h.key !== 'string' || !h.key.includes('BEGIN PGP PUBLIC KEY BLOCK')) throw new Error('The hand-off carries no public key.')
-  if (h.op !== 'update-key' && (typeof h.signature !== 'string' || !h.signature.includes('BEGIN PGP SIGNED MESSAGE'))) throw new Error('The hand-off carries no signed statement.')
+  const needsKey = h.op !== 'revoke', needsSig = h.op === 'attest' || h.op === 'reattest'
+  if (needsKey && (typeof h.key !== 'string' || !h.key.includes('BEGIN PGP PUBLIC KEY BLOCK'))) throw new Error('The hand-off carries no public key.')
+  if (needsSig && (typeof h.signature !== 'string' || !h.signature.includes('BEGIN PGP SIGNED MESSAGE'))) throw new Error('The hand-off carries no signed statement.')
   if (h.op !== 'attest' && !Number.isInteger(h.index)) throw new Error('The hand-off names no claim index.')
+  let authorization = null
+  if (h.authorization != null) {
+    const a = h.authorization
+    if (!Number.isInteger(a.nonce) || a.nonce < 0) throw new Error('The authorization has no valid nonce.')
+    if (!Number.isInteger(a.deadline) || a.deadline <= 0) throw new Error('The authorization has no valid deadline.')
+    if (!/^0x[0-9a-f]{130}$/i.test(a.signature || '')) throw new Error('The authorization has no valid signature.')
+    authorization = { nonce: a.nonce, deadline: a.deadline, signature: a.signature }
+  }
+  if (h.op === 'revoke' && !authorization) throw new Error('A revoke hand-off needs an authorization; revoke your own claim under Your claims.')
   return {
     op: h.op, network: String(h.network || 'mainnet'), owner: h.owner, fingerprint: h.fingerprint,
-    key: h.key, signature: h.signature ?? null, index: h.index ?? null, includeEmail: !!h.includeEmail,
+    key: h.key ?? null, signature: h.signature ?? null, index: h.index ?? null, includeEmail: !!h.includeEmail,
+    authorization,
   }
 }
