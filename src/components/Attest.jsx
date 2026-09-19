@@ -4,7 +4,8 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import * as openpgp from 'openpgp'
 import { createPublicClient, http, stringToHex, hexToString } from 'viem'
 import { stripEmailUserIDs, hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint } from '@thurinlabs/identity-kit'
-import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL } from '../wagmiConfig'
+import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
+import { readHandoff } from '../handoff'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -206,10 +207,14 @@ function StepSignEth({ active, done, onSigned, fingerprint: confirmedFp }) {
 // only serves user IDs with a verified email and drops non-email user IDs, so it
 // can't supply the published identity that carries the proof notations.
 
-function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, pgpSig, setPgpSig, includeEmail }) {
+function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, pgpSig, setPgpSig, includeEmail, prefillKey = null }) {
   const [status, setStatus] = useState(null)
   const [isVerifying, setIsVerifying] = useState(false)
-  const [pubKeyText, setPubKeyText] = useState('')
+  const [pubKeyText, setPubKeyText] = useState(prefillKey || '')
+  // Hand-off from the CLI: signature and key arrived in the link, so verify them
+  // once on our own and keep the gpg instructions out of the way unless asked.
+  const [manual, setManual] = useState(!prefillKey)
+  const [autoRan, setAutoRan] = useState(false)
   // Set once the signature verifies: the full key + the parsed message, so the
   // published key can be recomputed when the opt-in toggles.
   const [verified, setVerified] = useState(null) // { armoredFull, signedText, keyId, fingerprint, publicKey }
@@ -325,6 +330,12 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
     }
   }, [pgpSig, pubKeyText, address, expectedFingerprint])
 
+  useEffect(() => {
+    if (!active || !prefillKey || !address || autoRan) return
+    setAutoRan(true)
+    handleVerify()
+  }, [active, prefillKey, address, autoRan, handleVerify])
+
   return (
     <div className={`step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
@@ -333,7 +344,20 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
         {done && <span className="step-badge">✓ complete</span>}
       </div>
 
-      {active && (
+      {active && !manual && (
+        <div className="fade-in">
+          <p className="helper">
+            The signed statement and your key came with the link, so there is nothing to paste.
+            Checking the signature against the key, exactly as a lookup would.
+          </p>
+          {status && <div className={`status ${status.type}`}>{status.msg}</div>}
+          {status?.type === 'err' && (
+            <button className="btn btn-sm" onClick={() => setManual(true)} style={{ marginTop: 12 }}>Paste it myself instead</button>
+          )}
+        </div>
+      )}
+
+      {active && manual && (
         <div className="fade-in">
           {!includeEmail && (
             <div className="status info" style={{ marginBottom: 16 }}>
@@ -646,8 +670,8 @@ function useMyAttestations(address) {
 }
 
 /** Paste a fresh export → (strip emails unless included) → `updateKey`. Same key, new notations, no new signature. */
-function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel }) {
-  const [keyText, setKeyText] = useState('')
+function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, initialKey = null }) {
+  const [keyText, setKeyText] = useState(initialKey || '')
   const [withEmail, setWithEmail] = useState(hasEmail) // defaults to what the claim holds today
   const [preview, setPreview] = useState(null)
   const [status, setStatus] = useState(null)
@@ -786,10 +810,11 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel }) 
   )
 }
 
-function YourAttestations({ address, attestations, count, refetch, onCreate }) {
+function YourAttestations({ address, attestations, count, refetch, onCreate, handoff = null }) {
   const [revokeStatus, setRevokeStatus] = useState({})
   const [emailByIndex, setEmailByIndex] = useState({}) // index → true when the on-chain key has an email user ID
-  const [updating, setUpdating] = useState(null)       // index of the claim whose key is being updated
+  const [updating, setUpdating] = useState(handoff ? handoff.index : null) // index of the claim whose key is being updated
+  useEffect(() => { if (handoff) setUpdating(handoff.index) }, [handoff])   // the hand-off arrives once the right wallet is connected
   const { writeContractAsync } = useWriteContract()
 
   useEffect(() => {
@@ -912,7 +937,14 @@ function YourAttestations({ address, attestations, count, refetch, onCreate }) {
               {updating === a.index && !a.revoked && (
                 <tr key={`${a.index}-update`} className="att-update-row">
                   <td colSpan={5} style={{ padding: '4px 8px 12px' }}>
-                    <UpdateKeyPanel claim={a} address={address} hasEmail={!!emailByIndex[a.index]} onDone={refetch} onCancel={() => setUpdating(null)} />
+                    <UpdateKeyPanel
+                      claim={a}
+                      address={address}
+                      hasEmail={handoff && handoff.index === a.index ? handoff.includeEmail : !!emailByIndex[a.index]}
+                      initialKey={handoff && handoff.index === a.index ? handoff.key : null}
+                      onDone={refetch}
+                      onCancel={() => setUpdating(null)}
+                    />
                   </td>
                 </tr>
               )}
@@ -930,12 +962,28 @@ function YourAttestations({ address, attestations, count, refetch, onCreate }) {
 export default function Attest() {
   const { address, isConnected } = useAccount()
 
+  // A link from `thurin attest --no-key` carries the PGP half in the fragment: the
+  // steps it covers start out done, and only connecting + publishing are left.
+  const [handoff, handoffError] = useMemo(() => {
+    try { return [readHandoff(), null] } catch (e) { return [null, e.message] }
+  }, [])
+  const handoffNetworkOk = !handoff || handoff.network === NETWORK
+  const claimHandoff = handoff && handoffNetworkOk && handoff.op !== 'update-key' ? handoff : null   // attest | reattest
+  const updateHandoff = handoff && handoffNetworkOk && handoff.op === 'update-key' ? handoff : null
+  const wrongWallet = !!(handoff && isConnected && address && address.toLowerCase() !== handoff.owner)
+  // The fragment is read once; a new link pasted over this page should start over.
+  useEffect(() => {
+    const onHash = () => window.location.reload()
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
   // State flowing through the steps
-  const [ethData, setEthData]   = useState(null)   // { fingerprint }
+  const [ethData, setEthData]   = useState(claimHandoff ? { fingerprint: claimHandoff.fingerprint } : null)   // { fingerprint }
   const [pgpData, setPgpData]   = useState(null)   // { pgpSig, signedText, keyId, fingerprint, armoredPublicKey, pgpMeta }
-  const [pgpSigText, setPgpSigText] = useState('') // textarea value
+  const [pgpSigText, setPgpSigText] = useState(claimHandoff?.signature || '') // textarea value
   const [published, setPublished] = useState(false)
-  const [emailChoice, setEmailChoice] = useState(null) // 'hide' | 'show'
+  const [emailChoice, setEmailChoice] = useState(claimHandoff ? (claimHandoff.includeEmail ? 'show' : 'hide') : null) // 'hide' | 'show'
   const [replaceIndex, setReplaceIndex] = useState(null) // claim to revoke in the same tx, if any
   const { attestations: myClaims, count: myCount, refetch: refetchMine, loaded: myLoaded } = useMyAttestations(address)
   const activeClaims = useMemo(() => myClaims.filter(c => !c.revoked), [myClaims])
@@ -944,16 +992,16 @@ export default function Attest() {
   const [tab, setTab] = useState(null) // 'claims' | 'new'
   useEffect(() => {
     if (tab !== null || !myLoaded) return
-    setTab(activeClaims.length > 0 ? 'claims' : 'new')
-  }, [myLoaded, activeClaims.length, tab])
+    setTab(updateHandoff ? 'claims' : claimHandoff ? 'new' : activeClaims.length > 0 ? 'claims' : 'new')
+  }, [myLoaded, activeClaims.length, tab, claimHandoff, updateHandoff])
   useEffect(() => { if (!isConnected) setTab(null) }, [isConnected])
 
   // Default to replacing the active claim for the same key (the registry allows one per key).
   useEffect(() => {
     if (!ethData?.fingerprint) return
     const same = activeClaims.find(c => c.fingerprint === ethData.fingerprint.toLowerCase())
-    setReplaceIndex(same ? same.index : null)
-  }, [ethData?.fingerprint, activeClaims])
+    setReplaceIndex(claimHandoff?.op === 'reattest' ? claimHandoff.index : same ? same.index : null)
+  }, [ethData?.fingerprint, activeClaims, claimHandoff])
 
   // Derive active step
   const step = !isConnected ? 1
@@ -979,7 +1027,32 @@ export default function Attest() {
   return (
     <>
       <div className="attest-intro" style={{ maxWidth: 640, margin: '0 auto', padding: '0 16px' }}>
-        {isConnected && myLoaded && activeClaims.length > 0 ? (
+        {handoffError ? (
+          <div className="status err" style={{ marginBottom: 24 }}>{handoffError}</div>
+        ) : handoff && !handoffNetworkOk ? (
+          <div className="status err" style={{ marginBottom: 24 }}>
+            This link was made for <strong>{handoff.network}</strong>, but this page publishes to <strong>{NETWORK}</strong>.
+            Run the command again with <code>--network {NETWORK}</code>, or open the link on a {handoff.network} build.
+          </div>
+        ) : handoff ? (
+          <>
+            <p className="helper">
+              This link came from the Thurin CLI. It carries {handoff.op === 'update-key' ? 'an updated key for claim' : 'a signed claim for'}{' '}
+              {handoff.op === 'update-key' ? `#${handoff.index} of ` : ''}<strong>{shortAddr(handoff.owner)}</strong>: the wallet that has to publish it.
+              Nothing was sent anywhere; the part of the link after <code>#</code> stays in this browser.
+            </p>
+            <p className="helper" style={{ marginBottom: 24 }}>
+              Connect that wallet, check the summary, and publish. Nothing to paste. Anyone can make a link like this,
+              so publish only if the key it names is yours: <code>{handoff.fingerprint}</code>.
+            </p>
+            {wrongWallet && (
+              <div className="status err" style={{ marginBottom: 24 }}>
+                Connected as <strong>{shortAddr(address)}</strong>, but this claim was signed for <strong>{shortAddr(handoff.owner)}</strong>.
+                Switch to that account in your wallet.
+              </div>
+            )}
+          </>
+        ) : isConnected && myLoaded && activeClaims.length > 0 ? (
           <p className="helper">
             Attest links your Ethereum address to your PGP key. This wallet already has a claim:
             update or replace it under <strong>Your claims</strong>, or make a new one.
@@ -1020,7 +1093,7 @@ export default function Attest() {
           )}
 
           {isConnected && tab === 'claims' && (
-            <YourAttestations address={address} attestations={myClaims} count={myCount} refetch={refetchMine} onCreate={() => setTab('new')} />
+            <YourAttestations address={address} attestations={myClaims} count={myCount} refetch={refetchMine} onCreate={() => setTab('new')} handoff={!wrongWallet ? updateHandoff : null} />
           )}
 
           {isConnected && tab === 'new' && (
@@ -1048,6 +1121,7 @@ export default function Attest() {
                 pgpSig={pgpSigText}
                 setPgpSig={setPgpSigText}
                 onVerified={data => setPgpData(data)}
+                prefillKey={claimHandoff && !wrongWallet ? claimHandoff.key : null}
               />
 
               <StepAttest
