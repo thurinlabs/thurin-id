@@ -7,6 +7,7 @@ import { stripEmailUserIDs, hasEmailUserID, parsePgpKey, identifyProof, fingerpr
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 import { readHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
+import Authorize, { useIsEmpty } from './Authorize'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,12 @@ function extractFingerprint(input) {
   // Strip all whitespace and see if there's a 40-char hex string hiding in there
   const hex = input.replace(/\s/g, '').match(/[0-9A-Fa-f]{40}/)
   return hex ? hex[0].toUpperCase() : null
+}
+
+/** The clearsigned block alone, from BEGIN PGP SIGNED MESSAGE to END PGP SIGNATURE. */
+function trimClearsigned(text) {
+  const m = text.match(/-----BEGIN PGP SIGNED MESSAGE-----[\s\S]*?-----END PGP SIGNATURE-----/)
+  return m ? m[0] : text.trim()
 }
 
 // The message GPG signs — must match exactly
@@ -272,7 +279,7 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
       setPreview({ kept, removed, proofsPublished, proofsTotal, bytes })
       setStatus({ type: 'ok', msg: `✓ Valid signature from key ${verified.fingerprint}` })
       onVerified({
-        pgpSig: pgpSig.trim(),
+        pgpSig: trimClearsigned(pgpSig),
         signedText: verified.signedText,
         keyId: verified.keyId,
         fingerprint: verified.fingerprint,
@@ -299,7 +306,10 @@ function StepSignGpg({ active, done, address, expectedFingerprint, onVerified, p
     setPreview(null)
     setStatus({ type: 'info', msg: 'Verifying PGP signature…' })
     try {
-      const message = await openpgp.readCleartextMessage({ cleartextMessage: pgpSig.trim() })
+      // Keep only the signed block: a terminal paste often drags the prompt and the next command along.
+      const armored = trimClearsigned(pgpSig)
+      if (armored !== pgpSig) setPgpSig(armored)
+      const message = await openpgp.readCleartextMessage({ cleartextMessage: armored })
       const signedText = message.getText().trim()
       if (!signedText.toLowerCase().includes(address.toLowerCase())) {
         setStatus({ type: 'err', msg: `Signed text doesn't contain your address. Expected: "${gpgPayload(address)}"` })
@@ -451,6 +461,8 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
   const [txHash, setTxHash] = useState(null)
 
   const { writeContractAsync } = useWriteContract()
+  const { empty } = useIsEmpty(attestation?.ethAddress)
+  const replacing = replaceIndex !== null && replaceIndex !== undefined
 
   if (!active && !done) return (
     <div className={`step`}>
@@ -600,11 +612,20 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={handlePublish} disabled={publishStatus?.type === 'info'}>
-            {publishStatus?.type === 'info' ? 'Publishing…' : (replaceIndex !== null && replaceIndex !== undefined ? 'Replace & Publish' : 'Publish to Registry')}
+          <button className="btn btn-primary" onClick={handlePublish} disabled={publishStatus?.type === 'info' || empty} title={empty ? 'This address has no ETH for the fee' : undefined}>
+            {publishStatus?.type === 'info' ? 'Publishing…' : (replacing ? 'Replace & Publish' : 'Publish to Registry')}
           </button>
 
           {publishStatus && <div className={`status ${publishStatus.type}`}>{publishStatus.msg}</div>}
+
+          {empty && (
+            <Authorize
+              address={attestation.ethAddress}
+              op={replacing ? 'reattest' : 'attest'}
+              fields={{ fingerprint: attestation.gpgFingerprint, key: attestation.gpgPublicKey, signature: attestation.gpgSignature, index: replacing ? replaceIndex : undefined, includeEmail: (attestation.gpgMeta?.userIDs || []).some(u => u.includes('@')) }}
+              onPublished={hash => { setTxHash(hash); setPublishStatus({ type: 'ok', msg: '✓ Attested on-chain.' }); onPublish && onPublish() }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -673,6 +694,7 @@ function useMyAttestations(address) {
 /** Paste a fresh export → (strip emails unless included) → `updateKey`. Same key, new notations, no new signature. */
 function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, initialKey = null }) {
   const [keyText, setKeyText] = useState(initialKey || '')
+  const { empty } = useIsEmpty(address)
   const [withEmail, setWithEmail] = useState(hasEmail) // defaults to what the claim holds today
   const [preview, setPreview] = useState(null)
   const [status, setStatus] = useState(null)
@@ -801,12 +823,20 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
       )}
 
       <div className="row" style={{ marginTop: 12 }}>
-        <button className="btn btn-primary" onClick={handleUpdate} disabled={!preview || status?.type === 'info'}>
+        <button className="btn btn-primary" onClick={handleUpdate} disabled={!preview || status?.type === 'info' || empty} title={empty ? 'This address has no ETH for the fee' : undefined}>
           {status?.type === 'info' ? 'Updating…' : 'Update key'}
         </button>
         <button className="btn btn-sm" onClick={onCancel}>cancel</button>
       </div>
       {status && <div className={`status ${status.type}`}>{status.msg}</div>}
+      {empty && preview && preview.bytes <= MAX_PUBKEY_BYTES && (
+        <Authorize
+          address={address}
+          op="update-key"
+          fields={{ fingerprint: claim.fingerprint, key: preview.armored, index: claim.index, includeEmail: withEmail }}
+          onPublished={hash => { setStatus(null); setResult({ hash, proofs: preview.proofs, kept: preview.kept }); onDone && onDone() }}
+        />
+      )}
     </div>
   )
 }

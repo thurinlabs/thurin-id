@@ -47,3 +47,15 @@ export function readHandoff() {
     authorization,
   }
 }
+
+function toBase64Url(str) {
+  const bytes = new TextEncoder().encode(str)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+/** The fragment value for a hand-off, as the CLI would print it. */
+export function encodeHandoff(h) {
+  return toBase64Url(JSON.stringify(h))
+}
