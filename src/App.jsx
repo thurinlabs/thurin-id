@@ -353,7 +353,9 @@ function PgpKeyInfo({ armoredKey }) {
 
 function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoading, error }) {
   const activeCount = attestations.filter(a => !a.revoked).length
-  const latest = attestations[0] // newest first
+  // The claim this page speaks for: the newest *active* one (a revoked claim can be newer,
+  // as after moving a key to another address). Only a fully revoked address shows its last claim.
+  const latest = attestations.find(a => !a.revoked) || attestations[0] // newest first
 
   if (isLoading) {
     return <div className="status info" style={{ marginTop: 24 }}>Querying registry...</div>
