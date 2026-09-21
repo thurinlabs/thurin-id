@@ -241,6 +241,11 @@ body::before {
   cursor: not-allowed;
 }
 
+.btn-small {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .btn-primary {
   background: var(--color-primary);
   color: var(--color-btn-primary-text);
@@ -719,6 +724,12 @@ body::before {
   border-color: var(--color-error);
   color: var(--color-error);
   background: var(--color-error-bg);
+}
+
+.status-badge.neutral {
+  border-color: var(--color-text-muted);
+  color: var(--color-text-muted);
+  background: transparent;
 }
 
 .status-badge.pending {

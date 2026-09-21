@@ -21,6 +21,7 @@ import '@thurinlabs/identity-kit/styles'
 import { siteLinks } from './links'
 import Attest from './components/Attest'
 import LookupPreview from './components/LookupPreview'
+import EnsRecordLine from './components/EnsRecordLine'
 
 const chainClient = createPublicClient({
   chain: CHAIN,
@@ -418,6 +419,9 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                   {latest.verification.verified ? 'pgp verified' : 'unverified'}
                 </span>
               </div>
+            )}
+            {ensName && latest.verification?.verified && (
+              <EnsRecordLine ensName={ensName} fingerprint={latest.fingerprint} />
             )}
           </div>
         )}
