@@ -8,6 +8,7 @@ import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK }
 import { readHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
 import Authorize, { useIsEmpty } from './Authorize'
+import SetRecordPanel from './SetRecordPanel'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -1002,7 +1003,8 @@ export default function Attest() {
   // An authorized hand-off is published by *any* wallet through the `…For` calls; the
   // plain kind needs the owner's wallet and flows through the wizard below.
   const authorized = handoff && handoffNetworkOk && handoff.authorization ? handoff : null
-  const claimHandoff = handoff && handoffNetworkOk && !authorized && handoff.op !== 'update-key' ? handoff : null   // attest | reattest
+  const recordHandoff = handoff && handoffNetworkOk && !authorized && handoff.op === 'set-record' ? handoff : null
+  const claimHandoff = handoff && handoffNetworkOk && !authorized && !recordHandoff && handoff.op !== 'update-key' ? handoff : null   // attest | reattest
   const updateHandoff = handoff && handoffNetworkOk && !authorized && handoff.op === 'update-key' ? handoff : null
   const wrongWallet = !!(handoff && !authorized && isConnected && address && address.toLowerCase() !== handoff.owner)
   // The fragment is read once; a new link pasted over this page should start over.
@@ -1123,8 +1125,9 @@ export default function Attest() {
           />
 
           {authorized && <SubmitAuthorization handoff={authorized} isConnected={isConnected} />}
+          {recordHandoff && !wrongWallet && <SetRecordPanel handoff={recordHandoff} isConnected={isConnected} />}
 
-          {isConnected && !authorized && (
+          {isConnected && !authorized && !recordHandoff && (
             <div className="attest-tabs" role="tablist">
               <button role="tab" className={`attest-tab ${tab === 'claims' ? 'active' : ''}`} onClick={() => setTab('claims')}>
                 Your claims{myLoaded && activeClaims.length > 0 && <span className="attest-tab-count">{activeClaims.length}</span>}
@@ -1135,11 +1138,11 @@ export default function Attest() {
             </div>
           )}
 
-          {isConnected && !authorized && tab === 'claims' && (
+          {isConnected && !authorized && !recordHandoff && tab === 'claims' && (
             <YourAttestations address={address} attestations={myClaims} count={myCount} refetch={refetchMine} onCreate={() => setTab('new')} handoff={!wrongWallet ? updateHandoff : null} />
           )}
 
-          {isConnected && !authorized && tab === 'new' && (
+          {isConnected && !authorized && !recordHandoff && tab === 'new' && (
             <>
               <StepEmailChoice
                 active={step === 2}

@@ -3,7 +3,7 @@ import { useWriteContract, useReadContract } from 'wagmi'
 import { createPublicClient, http, stringToHex, recoverTypedDataAddress } from 'viem'
 import {
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
-  attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData,
+  attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, recordKind,
 } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 
@@ -16,10 +16,16 @@ import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK }
 // viewer's own wallet is always the other path.
 const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || ''
 
-const VERBS = { attest: 'Publish a claim', reattest: 'Replace a claim', 'update-key': 'Update a key', revoke: 'Revoke a claim' }
-const FNS = { attest: 'attestFor', reattest: 'reattestFor', 'update-key': 'updateKeyFor', revoke: 'revokeFor' }
+const VERBS = { attest: 'Publish a claim', reattest: 'Replace a claim', 'update-key': 'Update a key', revoke: 'Revoke a claim', 'set-record': 'Set a record' }
+const FNS = { attest: 'attestFor', reattest: 'reattestFor', 'update-key': 'updateKeyFor', revoke: 'revokeFor', 'set-record': 'setRecordFor' }
 
 function shortAddr(a) { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '' }
+function prettyRecord(kind, value) {
+  if (kind === 'thurin.pointer') {
+    try { const p = JSON.parse(value); if (p.v === 1) return p.releases.map(r => `${r.name}  ${r.date}  sha256 ${r.sha256.slice(0, 16)}…`).join('\n') } catch { /* raw */ }
+  }
+  return value
+}
 function fmtDate(unix) { return new Date(unix * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) }
 function timeLeft(unix) {
   const s = unix - Math.floor(Date.now() / 1000)
@@ -36,6 +42,7 @@ function typedDataFor(h) {
     case 'reattest': return reattestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, revokeIndex: BigInt(h.index), fingerprint: h.fingerprint, pgpSignature: h.signature, pgpPublicKey: h.key })
     case 'update-key': return updateKeyTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), pgpPublicKey: h.key })
     case 'revoke': return revokeTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index) })
+    case 'set-record': return setRecordTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), kind: recordKind(h.kind), value: h.value ? stringToHex(h.value) : '0x' })
     default: throw new Error(`Unknown operation ${h.op}`)
   }
 }
@@ -48,6 +55,7 @@ function argsFor(h) {
     case 'reattest': return [h.owner, BigInt(h.index), fingerprintToBytes(h.fingerprint), stringToHex(h.signature), stringToHex(h.key), d, signature]
     case 'update-key': return [h.owner, BigInt(h.index), stringToHex(h.key), d, signature]
     case 'revoke': return [h.owner, BigInt(h.index), d, signature]
+    case 'set-record': return [h.owner, BigInt(h.index), recordKind(h.kind), h.value ? stringToHex(h.value) : '0x', d, signature]
     default: throw new Error(`Unknown operation ${h.op}`)
   }
 }
@@ -162,7 +170,13 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
             <div className="label">What will be published</div>
             <div className="value">Owner: {h.owner}</div>
             {h.fingerprint && h.op !== 'revoke' && <div className="value">Key: {h.fingerprint}</div>}
-            {h.index !== null && <div className="value">{h.op === 'reattest' ? 'Replaces' : h.op === 'revoke' ? 'Revokes' : 'Updates'} claim #{h.index}{targetFpr ? ` (${targetFpr.slice(0, 8)}…${targetFpr.slice(-8)})` : ''}</div>}
+            {h.index !== null && <div className="value">{h.op === 'reattest' ? 'Replaces' : h.op === 'revoke' ? 'Revokes' : h.op === 'set-record' ? 'On' : 'Updates'} claim #{h.index}{targetFpr ? ` (${targetFpr.slice(0, 8)}…${targetFpr.slice(-8)})` : ''}</div>}
+            {h.op === 'set-record' && (
+              <>
+                <div className="value">Record: {h.kind}</div>
+                <pre className="value" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{h.value ? prettyRecord(h.kind, h.value) : '(clear)'}</pre>
+              </>
+            )}
             {check && h.key && (
               <>
                 <div className="value">Name: {check.names.join(', ') || '—'}</div>

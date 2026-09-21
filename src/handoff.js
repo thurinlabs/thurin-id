@@ -9,7 +9,7 @@
 // functions and pay the fee. The typed data is rebuilt from the other fields, never
 // carried, so what the page shows is what was signed.
 
-const OPS = ['attest', 'reattest', 'update-key', 'revoke']
+const OPS = ['attest', 'reattest', 'update-key', 'revoke', 'set-record']
 
 function fromBase64Url(s) {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/')
@@ -28,7 +28,8 @@ export function readHandoff() {
   if (!OPS.includes(h.op)) throw new Error(`Unknown hand-off operation "${h.op}".`)
   if (!/^0x[0-9a-f]{40}$/.test(h.owner || '')) throw new Error('The hand-off has no valid owner address.')
   if (!/^[0-9A-F]{40}$/.test(h.fingerprint || '')) throw new Error('The hand-off has no valid fingerprint.')
-  const needsKey = h.op !== 'revoke', needsSig = h.op === 'attest' || h.op === 'reattest'
+  const needsKey = h.op !== 'revoke' && h.op !== 'set-record', needsSig = h.op === 'attest' || h.op === 'reattest'
+  if (h.op === 'set-record' && (typeof h.kind !== 'string' || typeof h.value !== 'string')) throw new Error('The hand-off names no record.')
   if (needsKey && (typeof h.key !== 'string' || !h.key.includes('BEGIN PGP PUBLIC KEY BLOCK'))) throw new Error('The hand-off carries no public key.')
   if (needsSig && (typeof h.signature !== 'string' || !h.signature.includes('BEGIN PGP SIGNED MESSAGE'))) throw new Error('The hand-off carries no signed statement.')
   if (h.op !== 'attest' && !Number.isInteger(h.index)) throw new Error('The hand-off names no claim index.')
@@ -44,6 +45,7 @@ export function readHandoff() {
   return {
     op: h.op, network: String(h.network || 'mainnet'), owner: h.owner, fingerprint: h.fingerprint,
     key: h.key ?? null, signature: h.signature ?? null, index: h.index ?? null, includeEmail: !!h.includeEmail,
+    kind: h.kind ?? null, value: h.value ?? null,
     authorization,
   }
 }
