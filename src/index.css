@@ -1363,3 +1363,6 @@ a.proof-link:hover {
 @media (prefers-reduced-motion: reduce) {
   .home-tagline, .home-lede, .search-section-home, .lookup-row, .home-rule, .home-cards, .home-cards-link { animation: none; }
 }
+
+/* ─── Identity page tabs (reuse the attest tab styles) ─────────────────── */
+.identity-tabs { margin: 16px 0 8px; }

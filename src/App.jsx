@@ -22,6 +22,8 @@ import { siteLinks } from './links'
 import Attest from './components/Attest'
 import LookupPreview from './components/LookupPreview'
 import EnsRecordLine from './components/EnsRecordLine'
+import IdentityTabs from './components/IdentityTabs'
+import RecordsTab from './components/RecordsTab'
 
 const chainClient = createPublicClient({
   chain: CHAIN,
@@ -84,11 +86,12 @@ function parseRoute() {
       const prefix = hash.slice(0, slash).toLowerCase()
       const value = decodeURIComponent(hash.slice(slash + 1))
       if (value && (prefix === 'eth' || prefix === 'pgp' || prefix === 'ens')) {
+        const { id, tab } = splitTab(value)
         if (usesPathRouting()) {
-          window.history.replaceState(null, '', `/${prefix}/${encodeURIComponent(value)}`)
+          window.history.replaceState(null, '', `/${prefix}/${encodeURIComponent(id)}${tab === 'overview' ? '' : `/${tab}`}`)
         } else {
           // Path gateway — parse the hash route directly
-          return { type: prefix === 'eth' ? 'address' : prefix === 'pgp' ? (/^[0-9a-fA-F]{16}$/i.test(value) ? 'keyId' : 'fingerprint') : 'ens', value }
+          return { type: prefix === 'eth' ? 'address' : prefix === 'pgp' ? (/^[0-9a-fA-F]{16}$/i.test(id) ? 'keyId' : 'fingerprint') : 'ens', value: id, tab }
         }
       }
     }
@@ -101,27 +104,36 @@ function parseRoute() {
   if (slash === -1) return null
 
   const prefix = path.slice(0, slash).toLowerCase()
-  const value = decodeURIComponent(path.slice(slash + 1))
-  if (!value) return null
+  const raw = decodeURIComponent(path.slice(slash + 1))
+  if (!raw) return null
+  const { id: value, tab } = splitTab(raw)
 
-  if (prefix === 'eth' && /^0x[0-9a-fA-F]{40}$/.test(value)) return { type: 'address', value }
-  if (prefix === 'pgp' && /^[0-9a-fA-F]{40}$/i.test(value)) return { type: 'fingerprint', value }
-  if (prefix === 'pgp' && /^[0-9a-fA-F]{16}$/i.test(value)) return { type: 'keyId', value }
-  if (prefix === 'ens') return { type: 'ens', value }
+  if (prefix === 'eth' && /^0x[0-9a-fA-F]{40}$/.test(value)) return { type: 'address', value, tab }
+  if (prefix === 'pgp' && /^[0-9a-fA-F]{40}$/i.test(value)) return { type: 'fingerprint', value, tab }
+  if (prefix === 'pgp' && /^[0-9a-fA-F]{16}$/i.test(value)) return { type: 'keyId', value, tab }
+  if (prefix === 'ens') return { type: 'ens', value, tab }
 
   return null
 }
 
-function pushRoute(type, value) {
+// /ens/<name>/claims → { id: '<name>', tab: 'claims' }; no suffix → overview.
+const TABS = ['overview', 'claims', 'records']
+function splitTab(value) {
+  const m = value.match(/^(.*)\/(claims|records)$/)
+  return m ? { id: m[1], tab: m[2] } : { id: value, tab: 'overview' }
+}
+
+function pushRoute(type, value, tab = 'overview') {
   const prefix = type === 'address' ? 'eth' : (type === 'fingerprint' || type === 'keyId') ? 'pgp' : 'ens'
+  const suffix = TABS.includes(tab) && tab !== 'overview' ? `/${tab}` : ''
   if (usesPathRouting()) {
-    const newPath = `/${prefix}/${encodeURIComponent(value)}`
+    const newPath = `/${prefix}/${encodeURIComponent(value)}${suffix}`
     if (window.location.pathname !== newPath) {
       window.history.pushState(null, '', newPath)
     }
   } else {
     // Path gateway — use hash routing
-    const newHash = `#/${prefix}/${encodeURIComponent(value)}`
+    const newHash = `#/${prefix}/${encodeURIComponent(value)}${suffix}`
     if (window.location.hash !== newHash) {
       window.location.hash = newHash
     }
@@ -192,7 +204,7 @@ function Topbar({ isAttest }) {
 
 // ─── PGP Key Info ──────────────────────────────────────────────────────────
 
-function PgpKeyInfo({ armoredKey }) {
+function PgpKeyInfo({ armoredKey, show = 'all' }) {
   const [keyInfo, setKeyInfo] = useState(null)
   const [showKey, setShowKey] = useState(false)
   const [proofResults, setProofResults] = useState({})
@@ -244,10 +256,10 @@ function PgpKeyInfo({ armoredKey }) {
   return (
     <div className="detail-history">
       <div className="detail-label">
-        PGP Key Details
+        {show === 'key' ? 'PGP Key' : 'PGP Key Details'}
       </div>
 
-      {keyInfo.userIDs.length > 0 && (
+      {show !== 'key' && keyInfo.userIDs.length > 0 && (
         <div className="mono-box" style={{ marginBottom: 2 }}>
           {/* Every user ID stored on-chain. The attest flow strips emails unless the
               owner chose to include them, so what shows here is what they published. */}
@@ -256,7 +268,7 @@ function PgpKeyInfo({ armoredKey }) {
         </div>
       )}
 
-      {(() => {
+      {show !== 'key' && (() => {
         const thurinProofs = keyInfo.notations
           .map((n, i) => ({ notation: n, index: i, proof: identifyProof(n) }))
           .filter(p => p.proof)
@@ -300,6 +312,7 @@ function PgpKeyInfo({ armoredKey }) {
         )
       })()}
 
+      {show !== 'proofs' && (<>
       <div className="mono-box" style={{ marginBottom: 2 }}>
         <div className="label">Key Info</div>
         <div className="value">{keyInfo.algorithm}</div>
@@ -346,13 +359,14 @@ function PgpKeyInfo({ armoredKey }) {
           </>
         )}
       </div>
+      </>)}
     </div>
   )
 }
 
 // ─── Address Detail ─────────────────────────────────────────────────────────
 
-function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoading, error }) {
+function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoading, error, tab = 'overview', onTab }) {
   const activeCount = attestations.filter(a => !a.revoked).length
   // The claim this page speaks for: the newest *active* one (a revoked claim can be newer,
   // as after moving a key to another address). Only a fully revoked address shows its last claim.
@@ -392,6 +406,21 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
         </div>
       </div>
 
+      <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: count }} />
+
+      {tab === 'records' && (
+        <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} />
+      )}
+
+      {tab === 'claims' && (
+        <>
+          {latest && latest.pgpPublicKey && latest.verification?.verified && !latest.revoked && (
+            <PgpKeyInfo armoredKey={latest.pgpPublicKey} show="key" />
+          )}
+        </>
+      )}
+
+      {tab === 'overview' && (<>
       <div className="detail-summary">
         <div className="detail-label">Summary</div>
         <div className="summary-grid">
@@ -432,7 +461,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
           verifies and binds the key to this address, so unverified or revoked
           key data is never used to display an identity. */}
       {latest && latest.pgpPublicKey && latest.verification?.verified && !latest.revoked ? (
-        <PgpKeyInfo armoredKey={latest.pgpPublicKey} />
+        <PgpKeyInfo armoredKey={latest.pgpPublicKey} show="proofs" />
       ) : latest && latest.pgpPublicKey && latest.verification === null ? (
         <div className="detail-history">
           <div className="mono-box" style={{ marginBottom: 2 }}>
@@ -467,24 +496,26 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
       )}
 
       <EfpSection address={address} />
+      </>)}
 
-      {attestations.length > 0 && (
+      {tab === 'claims' && attestations.length > 0 && (
         <div className="detail-history">
-          <div className="detail-label">Seal History</div>
+          <div className="detail-label">Claim History</div>
           <div className="attestation-table-wrap">
             <table className="attestation-table">
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>#<span className="info-icon" title="The claim's position in this address's history: 0 is the first it ever published. Never reused; records and the CLI's --index refer to it.">?</span></th>
                   <th>Fingerprint</th>
                   <th>Date</th>
-                  <th>Status <span className="info-icon" title="Active: identity claim is live on-chain. Revoked: owner has revoked this seal.">?</span></th>
+                  <th>Status <span className="info-icon" title="Active: identity claim is live on-chain. Revoked: owner has revoked this claim.">?</span></th>
                   <th>PGP <span className="info-icon" title="Verified: the PGP clearsign block stored in the event log is cryptographically valid for this key and binds it to this address. Unverified: signature check failed or PGP data is missing.">?</span></th>
                 </tr>
               </thead>
               <tbody>
-                {attestations.map(a => (
-                  <tr key={a.index}>
+                {/* Active first, then revoked; newest first within each. */}
+                {[...attestations].sort((a, b) => (a.revoked === b.revoked ? b.index - a.index : a.revoked ? 1 : -1)).map(a => (
+                  <tr key={a.index} style={a.revoked ? { opacity: 0.6 } : undefined}>
                     <td className="att-index">{a.index}</td>
                     <td>
                       <a href={`/pgp/${a.fingerprint.toUpperCase()}`} className="fingerprint-link">
@@ -514,7 +545,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
         </div>
       )}
 
-      {attestations.length === 0 && (
+      {tab !== 'records' && attestations.length === 0 && (
         <div className="status info" style={{ marginTop: 2 }}>
           No identity claims found for this address.
           <div style={{ marginTop: 8 }}>
@@ -643,7 +674,7 @@ function ClaimAddressCell({ address }) {
 
 // ─── Fingerprint Detail ─────────────────────────────────────────────────────
 
-function FingerprintDetail({ fingerprint }) {
+function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
   const [claims, setClaims] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -783,6 +814,17 @@ function FingerprintDetail({ fingerprint }) {
         </div>
       </div>
 
+      <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: claims.length }} />
+
+      {tab === 'records' && (
+        <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} />
+      )}
+
+      {tab === 'claims' && bestClaim?.pgpPublicKey && (
+        <PgpKeyInfo armoredKey={bestClaim.pgpPublicKey} show="key" />
+      )}
+
+      {tab !== 'records' && (
       <div className="detail-summary">
         <div className="detail-label">Claims ({claims.length})</div>
         {activeClaims.length > 0 ? (
@@ -844,8 +886,10 @@ function FingerprintDetail({ fingerprint }) {
         )}
       </div>
 
-      {bestClaim?.pgpPublicKey ? (
-        <PgpKeyInfo armoredKey={bestClaim.pgpPublicKey} />
+      )}
+
+      {tab !== 'overview' ? null : bestClaim?.pgpPublicKey ? (
+        <PgpKeyInfo armoredKey={bestClaim.pgpPublicKey} show="proofs" />
       ) : claims.length > 0 && (
         <div className="detail-history">
           <div className="mono-box" style={{ marginBottom: 2 }}>
@@ -1143,6 +1187,13 @@ function Explorer() {
   const error = countError || attestationsError
   const noContract = !REGISTRY_ADDRESS
 
+  // Tabs are routes: switching one pushes /…/claims or /…/records and keeps the lookup.
+  const selectTab = (tab) => {
+    if (!submitted) return
+    pushRoute(submitted.type, submitted.value, tab)
+    setSubmitted({ ...submitted, tab })
+  }
+
   // Derive ENS name for display
   const displayEns = submitted?.type === 'ens' ? submitted.value
     : submitted?.type === 'address' ? reverseEns
@@ -1346,12 +1397,14 @@ function Explorer() {
             count={count}
             isLoading={attestationsLoading}
             error={attestationsError}
+            tab={submitted.tab || 'overview'}
+            onTab={selectTab}
           />
         )}
 
         {/* Fingerprint detail page */}
         {!noContract && submitted?.type === 'fingerprint' && (
-          <FingerprintDetail fingerprint={submitted.value} />
+          <FingerprintDetail fingerprint={submitted.value} tab={submitted.tab || 'overview'} onTab={selectTab} />
         )}
 
         {/* Loading (contract reads) */}
