@@ -1230,8 +1230,9 @@ function Explorer() {
           <h1 className="home-tagline">Prove more.</h1>
           <h1 className="home-tagline home-tagline-2">Reveal less.</h1>
           <p className="home-lede">
-            Prove an online identity is really yours. Anyone can check it, no company
-            holds it, and nothing about you goes public unless you choose.
+            Prove an online identity is really yours. Your PGP key, bound to your Ethereum
+            address on-chain. Anyone can check it, no company holds it, and nothing about
+            you goes public unless you choose.
           </p>
         </section>
       )}
@@ -1310,8 +1311,8 @@ function Explorer() {
               <p>There is no Thurin server holding your identity. It lives on Ethereum, a public record no company controls, and your browser checks it directly.</p>
             </div>
             <div className="home-rule">
-              <h3>Your key stays put.</h3>
-              <p>It is stored where you published it, so it can’t be swapped, lost, or quietly changed by someone else.</p>
+              <h3>Your PGP key stays put.</h3>
+              <p>It is published on-chain where you put it, so it can’t be swapped, lost, or quietly changed. gpg, git, and your mail client can fetch it from keys.thurin.id.</p>
             </div>
             <div className="home-rule">
               <h3>Your email stays private.</h3>
