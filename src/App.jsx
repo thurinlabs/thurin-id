@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { version } from '../package.json'
-import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useEnsAvatar } from 'wagmi'
+import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useEnsAvatar, useAccount } from 'wagmi'
+import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { createPublicClient, http, hexToString } from 'viem'
 import { normalize } from 'viem/ens'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL } from './wagmiConfig'
@@ -193,9 +194,22 @@ function Topbar({ isAttest }) {
           </a>
         ) : (
           <a href="/attest" className="topbar-action-link">
-            Create identity claim
+            Attest
           </a>
         )}
+        {/* One wallet switch for the whole site. Visitors never need it; connected, it only
+            unlocks things on your own pages (set records, the ENS record). No backend learns
+            anything: the browser is the only party that knows who you are. */}
+        <div className="topbar-connect">
+          <ConnectButton.Custom>
+            {({ account, chain, mounted, openConnectModal, openChainModal, openAccountModal }) => {
+              if (!mounted) return null
+              if (!account) return <button className="topbar-action-link topbar-connect-btn" onClick={openConnectModal}>Connect</button>
+              if (chain?.unsupported) return <button className="topbar-action-link topbar-connect-btn wrong" onClick={openChainModal} title={`Switch to ${NETWORK}`}>Wrong network</button>
+              return <button className="topbar-action-link topbar-connect-btn" onClick={openAccountModal} title={account.address}>{account.ensName || account.displayName}</button>
+            }}
+          </ConnectButton.Custom>
+        </div>
         <ThemeSelect storageKey="thurin-theme" />
       </div>
     </nav>
@@ -367,6 +381,8 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
 // ─── Address Detail ─────────────────────────────────────────────────────────
 
 function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoading, error, tab = 'overview', onTab }) {
+  const { address: wallet } = useAccount()
+  const isSelf = !!wallet && wallet.toLowerCase() === address.toLowerCase()
   const activeCount = attestations.filter(a => !a.revoked).length
   // The claim this page speaks for: the newest *active* one (a revoked claim can be newer,
   // as after moving a key to another address). Only a fully revoked address shows its last claim.
@@ -402,6 +418,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
               )}
             </div>
             {ensName && <div className="detail-ens">{ensName}</div>}
+            {isSelf && <div className="detail-self" title="The connected wallet is this address. Records and the ENS record can be set from this page.">this is you</div>}
           </div>
         </div>
       </div>
@@ -409,7 +426,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
       <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: count }} />
 
       {tab === 'records' && (
-        <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} armoredKey={latest?.pgpPublicKey} />
+        <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} armoredKey={latest?.pgpPublicKey} canEdit={isSelf} />
       )}
 
       {tab === 'claims' && (
@@ -675,6 +692,7 @@ function ClaimAddressCell({ address }) {
 // ─── Fingerprint Detail ─────────────────────────────────────────────────────
 
 function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
+  const { address: wallet } = useAccount()
   const [claims, setClaims] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -817,7 +835,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
       <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: claims.length }} />
 
       {tab === 'records' && (
-        <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} armoredKey={bestClaim?.pgpPublicKey} />
+        <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} armoredKey={bestClaim?.pgpPublicKey} canEdit={!!wallet && !!bestClaim && wallet.toLowerCase() === bestClaim.address.toLowerCase()} />
       )}
 
       {tab === 'claims' && bestClaim?.pgpPublicKey && (

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { normalize } from 'viem/ens'
 import { useAccount, useEnsText, usePublicClient, useWriteContract } from 'wagmi'
-import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { ENS_HINT_KEY, ensHintFor, ensHintWrite } from '@thurinlabs/identity-kit'
 import { CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 
@@ -25,7 +24,6 @@ export default function EnsRecordLine({ ensName, fingerprint }) {
   const override = import.meta.env.DEV ? new URLSearchParams(window.location.search).get('ens-record') : null
   const hint = { ...ensHintFor(override ?? record ?? null, fingerprint), isLoading: override === null && recordLoading, refetch }
   const { address: wallet, isConnected } = useAccount()
-  const { openConnectModal } = useConnectModal()
   const client = usePublicClient({ chainId: CHAIN.id })
   const { writeContractAsync } = useWriteContract()
   const [canWrite, setCanWrite] = useState(null)   // null: not checked; { resolver }: this wallet may write; { denied: reason }: it may not
@@ -82,9 +80,7 @@ export default function EnsRecordLine({ ensName, fingerprint }) {
         ens record
       </a>
       {needsWrite && status?.type !== 'ok' && (
-        !isConnected ? (
-          <button className="btn btn-small" onClick={openConnectModal} title={`Connect the wallet that manages ${ensName}`}>Connect to set it</button>
-        ) : canWrite?.resolver ? (
+        !isConnected ? null : canWrite?.resolver ? (
           <button className="btn btn-small btn-primary" onClick={setIt} disabled={status?.type === 'info'}>{status?.type === 'info' ? 'Setting…' : 'Set it'}</button>
         ) : null   // connected but not the name's manager: nothing to show; the hover says who can set it, the console says why
       )}

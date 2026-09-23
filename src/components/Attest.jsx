@@ -917,7 +917,8 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
             </tr>
           </thead>
           <tbody>
-            {attestations.map(a => (
+            {/* Active first, then revoked; newest first within each — same order as the identity page. */}
+            {[...attestations].sort((a, b) => (a.revoked === b.revoked ? b.index - a.index : a.revoked ? 1 : -1)).map(a => (
               <Fragment key={a.index}>
               <tr>
                 <td className="att-index">{a.index}</td>

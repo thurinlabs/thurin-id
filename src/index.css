@@ -1366,3 +1366,33 @@ a.proof-link:hover {
 
 /* ─── Identity page tabs (reuse the attest tab styles) ─────────────────── */
 .identity-tabs { margin: 16px 0 8px; }
+
+/* ─── Act as yourself: top-bar connect, "this is you", record form ─────── */
+.topbar-connect { display: flex; align-items: center; }
+.topbar-connect-btn { background: none; border: 1px solid var(--color-border); padding: 5px 10px; cursor: pointer; }
+.topbar-connect-btn:hover { border-color: var(--color-primary); }
+.topbar-connect-btn.wrong { color: var(--color-secondary); border-color: var(--color-secondary); }
+.detail-self {
+  display: inline-block;
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-secondary);
+  border: 1px solid var(--color-secondary);
+  padding: 2px 8px;
+}
+.record-form select, .record-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  padding: 8px 10px;
+}
+.record-form select { margin-bottom: 6px; }
+.record-form textarea { resize: vertical; }
+.record-form select:focus, .record-form textarea:focus { outline: none; border-color: var(--color-primary); }
