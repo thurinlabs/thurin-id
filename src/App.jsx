@@ -409,7 +409,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
       <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: count }} />
 
       {tab === 'records' && (
-        <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} />
+        <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} armoredKey={latest?.pgpPublicKey} />
       )}
 
       {tab === 'claims' && (
@@ -817,7 +817,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
       <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: claims.length }} />
 
       {tab === 'records' && (
-        <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} />
+        <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} armoredKey={bestClaim?.pgpPublicKey} />
       )}
 
       {tab === 'claims' && bestClaim?.pgpPublicKey && (

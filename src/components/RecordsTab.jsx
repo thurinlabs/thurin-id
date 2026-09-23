@@ -75,7 +75,13 @@ function Body({ r }) {
     case 'canary':
       return (
         <>
-          <div className="value">{d.date}{d.clearsigned && <span className="status-badge verified" style={{ marginLeft: 8 }}>signed</span>}</div>
+          <div className="value">
+            {d.date}
+            {d.clearsigned && d.verified === true && <span className="status-badge verified" style={{ marginLeft: 8 }} title="Clearsigned by the key on this claim; the signature verifies">verified</span>}
+            {d.clearsigned && d.verified === false && <span className="status-badge unverified" style={{ marginLeft: 8 }} title={d.reason || 'The signature does not verify against the key on this claim'}>unverified</span>}
+            {d.clearsigned && d.verified === null && <span className="status-badge neutral" style={{ marginLeft: 8 }} title="Clearsigned, not checked">signed</span>}
+            {!d.clearsigned && <span className="status-badge neutral" style={{ marginLeft: 8 }} title="Plain text, not signed">unsigned</span>}
+          </div>
           <pre className="value" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{d.statement}</pre>
         </>
       )
@@ -90,7 +96,7 @@ function Body({ r }) {
   }
 }
 
-export default function RecordsTab({ owner, index }) {
+export default function RecordsTab({ owner, index, armoredKey }) {
   const enabled = !!owner && index !== null && index !== undefined
   const { data: raw, isLoading } = useReadContracts({
     contracts: enabled ? IDENTITY_KINDS.map(kind => ({
@@ -108,12 +114,12 @@ export default function RecordsTab({ owner, index }) {
       for (let i = 0; i < IDENTITY_KINDS.length; i++) {
         const r = raw[i]
         const text = r?.status === 'success' ? decodeRecord(r.result) : ''
-        if (text) out.push(await parseRecord(IDENTITY_KINDS[i], text))
+        if (text) out.push(await parseRecord(IDENTITY_KINDS[i], text, { armoredKey: armoredKey || undefined }))
       }
       if (live) setRecords(out)
     })()
     return () => { live = false }
-  }, [raw])
+  }, [raw, armoredKey])
 
   if (!enabled) {
     return (
