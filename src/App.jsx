@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { version } from '../package.json'
-import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useEnsAvatar, useAccount } from 'wagmi'
+import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useAccount } from 'wagmi'
+import { useSafeAvatar } from './avatar'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { createPublicClient, http, hexToString } from 'viem'
 import { normalize } from 'viem/ens'
@@ -672,11 +673,7 @@ function ClaimAddressCell({ address }) {
     chainId: CHAIN.id,
     query: { enabled: !!address },
   })
-  const { data: ensAvatar } = useEnsAvatar({
-    name: ensName ? safeNormalize(ensName) : undefined,
-    chainId: CHAIN.id,
-    query: { enabled: !!ensName },
-  })
+  const ensAvatar = useSafeAvatar(ensName)
   return (
     <div className="claim-address-cell">
       {ensAvatar && <img src={ensAvatar} alt="" className="ens-avatar-sm" />}
@@ -1217,11 +1214,7 @@ function Explorer() {
     : submitted?.type === 'address' ? reverseEns
     : null
 
-  const { data: ensAvatar } = useEnsAvatar({
-    name: displayEns ? safeNormalize(displayEns) : undefined,
-    chainId: CHAIN.id,
-    query: { enabled: !!displayEns },
-  })
+  const ensAvatar = useSafeAvatar(displayEns)
 
   return (
     <>

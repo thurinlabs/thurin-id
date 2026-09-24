@@ -20,7 +20,8 @@ const KIND_LABEL = {
   'thurin.private': 'Private',
   'thurin.disclosure': 'Disclosure',
 }
-// What the owner can write from the page. private/disclosure need encryption: CLI for now.
+// What the owner can write from the page. private/disclosure are read-only kinds: writing
+// them is punted (on-chain history is forever; see the vault's Encrypt note).
 const EDITABLE = ['thurin.railgun', 'thurin.security', 'thurin.successor', 'thurin.affiliation', 'thurin.canary']
 const HINT = {
   'thurin.railgun': 'Your Railgun 0zk address, so people can pay you privately by name.',
@@ -272,7 +273,7 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
         <RecordForm index={index} armoredKey={armoredKey} existing={records} onDone={done} onCancel={() => setEditing(null)} />
       )}
       <div style={{ fontFamily: 'var(--mono)', color: 'var(--color-text-muted)', fontSize: 12, marginTop: 8 }}>
-        Records Thurin knows about, on claim #{index}. {canEdit ? 'Private and disclosure records are set from the CLI, which can encrypt.' : 'Set from the CLI: thurin record set <kind> <value>'} · <a href={DOCS} target="_blank" rel="noopener noreferrer" className="fingerprint-link">the kinds</a>
+        Records Thurin knows about, on claim #{index}. {canEdit ? 'Owners can also set them from the CLI.' : 'Set from the CLI: thurin record set <kind> <value>'} · <a href={DOCS} target="_blank" rel="noopener noreferrer" className="fingerprint-link">the kinds</a>
       </div>
     </div>
   )

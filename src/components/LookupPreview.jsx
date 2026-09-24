@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useEnsName, useEnsAvatar } from 'wagmi'
+import { useEnsName } from 'wagmi'
+import { useSafeAvatar } from '../avatar'
 import { normalize } from 'viem/ens'
 import { useAttestations, parsePgpKey, identifyProof, verifyProof, displayUrl } from '@thurinlabs/identity-kit'
 import { CHAIN } from '../wagmiConfig'
@@ -61,11 +62,7 @@ export default function LookupPreview({ address, name, resolving, notFound, neyn
     query: { enabled: !name && !!address },
   })
   const displayName = name || reverseName || null
-  const { data: avatar } = useEnsAvatar({
-    name: displayName ? safeNormalize(displayName) : undefined,
-    chainId: CHAIN.id,
-    query: { enabled: !!displayName },
-  })
+  const avatar = useSafeAvatar(displayName)
 
   const claim = useMemo(
     () => claims.find(c => !c.revoked && c.verification?.verified) || null,
