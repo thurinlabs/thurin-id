@@ -1436,3 +1436,12 @@ a.proof-link:hover {
   text-decoration: underline; text-underline-offset: 3px;
 }
 .rpc-down-action:hover { color: var(--color-primary); }
+
+/* ─── Why a claim doesn't count ─── */
+.claim-check-note { margin-top: 8px; font-size: 14px; line-height: 1.5; color: var(--color-text); word-break: normal; }
+.claim-check-note p { margin: 0; }
+.claim-check-note p + p { margin-top: 6px; }
+.claim-check-fix { color: var(--color-text-muted); }
+.claim-check-note code { font-size: 13px; }
+.claim-check-note a { color: var(--color-primary); text-decoration: underline; }
+.claim-check-note a:hover { color: var(--color-primary-light); }

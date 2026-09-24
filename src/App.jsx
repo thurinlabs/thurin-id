@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
 import { version } from '../package.json'
 import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useAccount } from 'wagmi'
 import { useSafeAvatar, AvatarImg } from './avatar'
@@ -18,6 +18,11 @@ import {
   parsePgpKey,
   verifyAttestation,
   fetchEFPGraph,
+  claimCheckText,
+  expiresSoon,
+  expiresSoonText,
+  claimFates,
+  claimFateText,
 } from '@thurinlabs/identity-kit'
 import '@thurinlabs/identity-kit/styles'
 import { siteLinks } from './links'
@@ -395,6 +400,33 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
   )
 }
 
+// ─── Claim check note ───────────────────────────────────────────────────────
+// The sentence under a claim's badge: why it doesn't count, or that its key expires soon. The
+// "If this is yours" fix shows only when the connected wallet owns the claim.
+
+function ClaimCheckNote({ check, soon, isSelf }) {
+  if (!check) return null
+  if (check.kind !== 'verified') return (
+    <div className="claim-check-note">
+      <p>{check.sentence}</p>
+      {isSelf && check.fix && (
+        <p className="claim-check-fix">If this is yours: {check.fix} <a href="/attest">Your claims ›</a></p>
+      )}
+    </div>
+  )
+  if (!soon) return null
+  return (
+    <div className="claim-check-note">
+      <p>{expiresSoonText(soon)}</p>
+      {isSelf && (
+        <p className="claim-check-fix">
+          If this is yours: extend it (<code>gpg --quick-set-expire</code>), then Update key at <a href="/attest">thurin.id/attest</a>. No new signature needed.
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ─── Address Detail ─────────────────────────────────────────────────────────
 
 function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoading, error, tab = 'overview', onTab }) {
@@ -404,6 +436,10 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
   // The claim this page speaks for: the newest *active* one (a revoked claim can be newer,
   // as after moving a key to another address). Only a fully revoked address shows its last claim.
   const latest = attestations.find(a => !a.revoked) || attestations[0] // newest first
+  // Why a claim does or doesn't count, in the kit's words; the "If this is yours" fix only for the owner.
+  const fates = useMemo(() => claimFates(attestations), [attestations])
+  const check = latest?.verification ? claimCheckText(latest.verification) : null
+  const soon = expiresSoon(latest?.verification)
 
   if (isLoading) {
     return <div className="status info" style={{ marginTop: 24 }}>Querying registry...</div>
@@ -473,13 +509,15 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
           <div className="mono-box" style={{ marginTop: 12 }}>
             <div className="label">current fingerprint</div>
             <div className="value">{latest.fingerprint.toUpperCase()}</div>
-            {latest.verification && (
-              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span className={`status-badge ${latest.verification.verified ? 'verified' : 'unverified'}`}
-                  title={latest.verification.verified ? 'PGP signature verified: the clearsign block in the event log is valid for this key and binds it to this address' : latest.verification.reason}>
-                  {latest.verification.verified ? 'pgp verified' : 'unverified'}
-                </span>
-              </div>
+            {latest.verification && check && (
+              <>
+                <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span className={`status-badge ${latest.verification.verified ? 'verified' : 'unverified'}`} title={check.sentence}>
+                    {check.label}
+                  </span>
+                </div>
+                <ClaimCheckNote check={check} soon={soon} isSelf={isSelf} />
+              </>
             )}
             {ensName && latest.verification?.verified && (
               <EnsRecordLine ensName={ensName} fingerprint={latest.fingerprint} />
@@ -507,8 +545,8 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
             <div className="label">Identity Proofs</div>
             <div className="value" style={{ color: 'var(--color-text-muted)' }}>
               {latest.revoked
-                ? 'This claim has been revoked — key data not shown.'
-                : 'Signature not verified — key data not shown.'}
+                ? `${claimFateText(fates.get(latest.index) ?? { state: 'revoked', at: latest.revokedAt }) ?? 'This claim has been revoked.'} Key data not shown.`
+                : "Key data not shown while this claim doesn't count."}
             </div>
             <div className="proof-docs-footer">
               <a href="https://docs.thurin.id/#/guides/proofs" target="_blank" rel="noopener noreferrer">how proofs work</a>
@@ -540,14 +578,20 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                   <th>#<span className="info-icon" title="The claim's position in this address's history: 0 is the first it ever published. Never reused; records and the CLI's --index refer to it.">?</span></th>
                   <th>Fingerprint</th>
                   <th>Date</th>
-                  <th>Status <span className="info-icon" title="Active: identity claim is live on-chain. Revoked: owner has revoked this claim.">?</span></th>
-                  <th>PGP <span className="info-icon" title="Verified: the PGP clearsign block stored in the event log is cryptographically valid for this key and binds it to this address. Unverified: signature check failed or PGP data is missing.">?</span></th>
+                  <th>Status <span className="info-icon" title="Active: the claim is live on-chain. Revoked: its owner revoked it. Replaced: its owner replaced it with a newer claim in one transaction.">?</span></th>
+                  <th>PGP <span className="info-icon" title="Checked now, the way gpg does: the key signed a line naming this address, and the key and the subkey that signed are not revoked or expired. Revoked and replaced claims aren't checked.">?</span></th>
                 </tr>
               </thead>
               <tbody>
                 {/* Active first, then revoked; newest first within each. */}
-                {[...attestations].sort((a, b) => (a.revoked === b.revoked ? b.index - a.index : a.revoked ? 1 : -1)).map(a => (
-                  <tr key={a.index} style={a.revoked ? { opacity: 0.6 } : undefined}>
+                {[...attestations].sort((a, b) => (a.revoked === b.revoked ? b.index - a.index : a.revoked ? 1 : -1)).map(a => {
+                  const fate = fates.get(a.index) ?? { state: a.revoked ? 'revoked' : 'active' }
+                  const rowCheck = !a.revoked && a.verification ? claimCheckText(a.verification) : null
+                  const rowSoon = !a.revoked ? expiresSoon(a.verification) : null
+                  const note = rowCheck && (!a.verification.verified || rowSoon)
+                  return (
+                  <Fragment key={a.index}>
+                  <tr style={a.revoked ? { opacity: 0.6 } : undefined}>
                     <td className="att-index">{a.index}</td>
                     <td>
                       <a href={`/pgp/${a.fingerprint.toUpperCase()}`} className="fingerprint-link">
@@ -556,21 +600,32 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                     </td>
                     <td className="att-date">{formatDate(a.createdAt)}</td>
                     <td>
-                      <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`}>
-                        {a.revoked ? 'revoked' : 'active'}
+                      <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`} title={claimFateText(fate) ?? undefined}>
+                        {fate.state === 'replaced' ? `replaced → #${fate.by}` : fate.state}
                       </span>
                     </td>
                     <td>
-                      {a.verification ? (
-                        <span className={`status-badge ${a.verification.verified ? 'verified' : 'unverified'}`}>
-                          {a.verification.verified ? 'verified' : 'unverified'}
+                      {a.revoked ? (
+                        <span className="att-date">—</span>
+                      ) : rowCheck ? (
+                        <span className={`status-badge ${a.verification.verified ? 'verified' : 'unverified'}`} title={rowCheck.sentence}>
+                          {a.verification.verified ? 'verified' : rowCheck.label}
                         </span>
                       ) : (
                         <span className="status-badge" style={{ opacity: 0.4 }}>...</span>
                       )}
                     </td>
                   </tr>
-                ))}
+                  {note && (
+                    <tr className="att-note-row">
+                      <td colSpan={5} style={{ padding: '0 16px 10px' }}>
+                        <ClaimCheckNote check={rowCheck} soon={rowSoon} isSelf={isSelf} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -877,8 +932,8 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                       <td>
                         {v ? (
                           <span className={`status-badge ${v.verified ? 'verified' : 'unverified'}`}
-                            title={v.verified ? 'PGP signature verified' : v.reason}>
-                            {v.verified ? 'verified' : 'unverified'}
+                            title={claimCheckText(v).sentence}>
+                            {v.verified ? 'verified' : claimCheckText(v).label}
                           </span>
                         ) : (
                           <span className="status-badge" style={{ opacity: 0.4 }}>...</span>
