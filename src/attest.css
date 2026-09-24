@@ -894,3 +894,27 @@ pre {
   margin-top: 8px;
   word-break: break-all;
 }
+
+/* ─── One-paste sign step ─── */
+.command-block.wrap { overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
+.link-btn {
+  background: none; border: none; padding: 0; font: inherit; font-size: 14px;
+  color: var(--color-primary); text-decoration: underline; cursor: pointer;
+}
+.link-btn:hover { color: var(--color-primary-light); }
+.key-choice {
+  width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 14px;
+  background: var(--color-surface-deep); color: var(--color-text);
+  border: 1px solid var(--color-border); padding: 10px 12px;
+}
+.key-choice:focus { outline: none; border-color: var(--color-primary); }
+.email-toggle {
+  display: flex; gap: 10px; align-items: flex-start; margin-top: 12px;
+  font-size: 15px; line-height: 1.5; color: var(--color-text); cursor: pointer;
+}
+.email-toggle input { margin-top: 5px; accent-color: var(--color-primary); }
+.attest-cli { max-width: 640px; margin: 32px auto 0; padding: 0 16px; text-align: center; }
+.needs-name p { margin: 0 0 8px; }
+.needs-name p + p { margin-top: 10px; }
+.needs-name .command-block { color: var(--color-text); }
+.needs-name .btn + p { margin-top: 12px; }
