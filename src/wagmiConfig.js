@@ -20,11 +20,40 @@ export { REGISTRY_ABI }
 // Alchemy serves every network from the same app key; swap the host for Sepolia
 // unless a dedicated URL is given. Local talks to anvil directly.
 const MAINNET_RPC = import.meta.env.VITE_ALCHEMY_RPC_URL
-export const RPC_URL = NETWORK === 'local'
+export const DEFAULT_RPC_URL = NETWORK === 'local'
   ? (import.meta.env.VITE_LOCAL_RPC_URL || REGISTRY.defaultRpcUrl)
   : NETWORK === 'sepolia'
     ? (import.meta.env.VITE_SEPOLIA_RPC_URL || (MAINNET_RPC || '').replace('eth-mainnet', 'eth-sepolia') || REGISTRY.defaultRpcUrl)
     : (MAINNET_RPC || REGISTRY.defaultRpcUrl)
+
+// A visitor can read through their own RPC instead (footer → Change). Saved in this browser
+// only, per network; every read, gas estimate, and receipt below uses it. Writes still go
+// through the wallet's own RPC. Read once at load: saving reloads the page.
+export const RPC_STORAGE_KEY = `thurin-rpc:${NETWORK}`
+export function isUsableRpcUrl(url) {
+  try {
+    const u = new URL(url)
+    return u.protocol === 'https:' || (NETWORK === 'local' && u.protocol === 'http:')
+  } catch { return false }
+}
+function savedRpcUrl() {
+  try {
+    const v = localStorage.getItem(RPC_STORAGE_KEY)
+    return v && isUsableRpcUrl(v) ? v : null
+  } catch { return null }
+}
+export const CUSTOM_RPC_URL = savedRpcUrl()
+export const RPC_URL = CUSTOM_RPC_URL || DEFAULT_RPC_URL
+
+/** Who sees the site's reads, in plain words: "Alchemy", "PublicNode", or a hostname. */
+export function rpcProviderName(url) {
+  try {
+    const h = new URL(url).hostname
+    if (h.endsWith('alchemy.com')) return 'Alchemy'
+    if (h.endsWith('publicnode.com')) return 'PublicNode'
+    return h
+  } catch { return url }
+}
 
 // One chain per build. Offering a second one (tried for phone wallets without testnets)
 // let the app sit on the wrong network without complaint; with a single chain RainbowKit

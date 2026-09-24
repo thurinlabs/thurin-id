@@ -25,6 +25,8 @@ import Attest from './components/Attest'
 import LookupPreview from './components/LookupPreview'
 import EnsRecordLine from './components/EnsRecordLine'
 import AccountMenu from './components/AccountMenu'
+import RpcSetting from './components/RpcSetting'
+import { ReadFailed, EnsNotResolved } from './components/ReadFailed'
 import IdentityTabs from './components/IdentityTabs'
 import RecordsTab from './components/RecordsTab'
 
@@ -407,9 +409,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
     return <div className="status info" style={{ marginTop: 24 }}>Querying registry...</div>
   }
 
-  if (error) {
-    return <div className="status err" style={{ marginTop: 24 }}>Query failed: {error.shortMessage || error.message}</div>
-  }
+  if (error) return <ReadFailed error={error} />
 
   return (
     <div className="detail-page fade-in">
@@ -826,9 +826,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
     return <div className="status info" style={{ marginTop: 24 }}>Querying registry...</div>
   }
 
-  if (error) {
-    return <div className="status err" style={{ marginTop: 24 }}>Query failed: {error.message}</div>
-  }
+  if (error) return <ReadFailed error={error} />
 
   const activeClaims = claims.filter(c => !c.revoked)
   const revokedClaims = claims.filter(c => c.revoked)
@@ -1353,18 +1351,14 @@ function Explorer() {
           </div>
         )}
 
-        {/* ENS resolution failed */}
-        {submitted?.type === 'ens' && !ensLoading && ensError && (
-          <div className="status err" style={{ marginTop: 24 }}>
-            Could not resolve ENS name: {ensError.shortMessage || ensError.message}
-          </div>
+        {/* ENS failed or resolved to nothing: "no address" only if the RPC actually answers */}
+        {submitted?.type === 'ens' && !ensLoading && (ensError || !ensResolvedAddress) && (
+          <EnsNotResolved key={submitted.value} name={submitted.value} error={ensError} />
         )}
 
-        {/* ENS resolved but no address found */}
-        {submitted?.type === 'ens' && !ensLoading && !ensError && !ensResolvedAddress && (
-          <div className="status err" style={{ marginTop: 24 }}>
-            No address found for {submitted.value}
-          </div>
+        {/* The owner's claim list couldn't be read (AddressDetail needs it to render at all) */}
+        {!noContract && isAddressLookup && lookupAddress && countError && (
+          <ReadFailed error={countError} />
         )}
 
         {/* Contract not deployed — fallback with whatever data we have */}
@@ -1461,7 +1455,10 @@ export default function App() {
       {isAttest ? <Attest /> : <Explorer />}
 
       <footer className="footer">
-        <span className="footer-version">thurin v{version}</span>
+        <div className="footer-left">
+          <span className="footer-version">thurin v{version}</span>
+          <RpcSetting />
+        </div>
         <div className="footer-columns">
           <div className="footer-col">
             <span className="footer-col-label">Home</span>

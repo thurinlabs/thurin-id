@@ -1039,7 +1039,7 @@ a.proof-link:hover {
     gap: 32px;
   }
 
-  .footer-version {
+  .footer-left {
     order: 1;
   }
 }
@@ -1411,3 +1411,27 @@ a.proof-link:hover {
 }
 .account-menu-item + .account-menu-item { border-top: 1px solid var(--color-border); }
 .account-menu-item:hover, .account-menu-item:focus { color: var(--color-primary); outline: none; background: var(--color-surface-deep); }
+
+/* ─── Footer: which RPC sees the reads, and a way to use your own ────────── */
+.footer-left { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
+.rpc-setting { font-size: 12px; color: var(--color-text-muted); }
+.rpc-setting-toggle {
+  background: none; border: none; padding: 0; cursor: pointer; font: inherit;
+  color: var(--color-text-muted); text-decoration: underline; text-underline-offset: 3px;
+}
+.rpc-setting-toggle:hover { color: var(--color-primary); }
+.rpc-setting-panel { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.rpc-setting-panel p { margin: 0; line-height: 1.5; letter-spacing: 0.02em; }
+.rpc-setting-panel input {
+  font-family: var(--mono); font-size: 12px; padding: 6px 8px; width: 100%; box-sizing: border-box;
+  background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border);
+}
+.rpc-setting-panel input:focus { outline: none; border-color: var(--color-primary); }
+.rpc-setting-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rpc-setting-ok { color: var(--color-success); }
+.rpc-setting-err { color: var(--color-error); }
+.rpc-down-action {
+  background: none; border: none; padding: 0; cursor: pointer; font: inherit; color: inherit;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.rpc-down-action:hover { color: var(--color-primary); }
