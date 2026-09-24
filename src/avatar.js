@@ -1,10 +1,11 @@
 // ENS avatars without the tracking pixel. The rule (what may load) lives in the kit's
 // core/avatar.ts, shared with ThurinCard and the embed; this is only the app-side hook, since
 // the kit's own React hooks can't run here (the sibling link makes a second copy of wagmi).
+import { createElement, useEffect, useState } from 'react'
 import { useEnsText, useReadContract } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
 import { normalize } from 'viem/ens'
-import { avatarUrl, parseNftAvatar, nftAvatarImage, NFT_AVATAR_ABI } from '@thurinlabs/identity-kit'
+import { avatarUrl, avatarFallbacks, parseNftAvatar, nftAvatarImage, NFT_AVATAR_ABI } from '@thurinlabs/identity-kit'
 import { CHAIN } from './wagmiConfig'
 
 function safeNormalize(name) { try { return normalize(name) } catch { return undefined } }
@@ -30,4 +31,12 @@ export function useSafeAvatar(name) {
     enabled: typeof tokenUri === 'string' && !!nft,
   })
   return direct || image || undefined
+}
+
+/** An avatar <img> that retries through the other IPFS gateways if one fails, then renders `fallback`. */
+export function AvatarImg({ src, className, fallback = null }) {
+  const [tries, setTries] = useState([])
+  useEffect(() => { setTries(src ? [src, ...avatarFallbacks(src)] : []) }, [src])
+  if (!tries.length) return fallback
+  return createElement('img', { src: tries[0], alt: '', className, onError: () => setTries((t) => t.slice(1)) })
 }

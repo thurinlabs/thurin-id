@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useEnsName } from 'wagmi'
-import { useSafeAvatar } from '../avatar'
+import { useSafeAvatar, AvatarImg } from '../avatar'
 import { normalize } from 'viem/ens'
 import { useAttestations, parsePgpKey, identifyProof, verifyProof, displayUrl } from '@thurinlabs/identity-kit'
 import { CHAIN } from '../wagmiConfig'
@@ -110,11 +110,10 @@ export default function LookupPreview({ address, name, resolving, notFound, neyn
   return (
     <div className="lookup-preview" aria-live="polite">
       <div className="lookup-preview-head">
-        {avatar
-          ? <img className="lookup-preview-avatar" src={avatar} alt="" />
-          : <div className="lookup-preview-avatar lookup-preview-avatar-empty" aria-hidden="true">
-              {headline ? headline[0].toUpperCase() : '?'}
-            </div>}
+        <AvatarImg src={avatar} className="lookup-preview-avatar" fallback={
+          <div className="lookup-preview-avatar lookup-preview-avatar-empty" aria-hidden="true">
+            {headline ? headline[0].toUpperCase() : '?'}
+          </div>} />
         <div className="lookup-preview-who">
           <div className="lookup-preview-name">
             {notFound ? 'No such name' : (headline || 'Looking up…')}

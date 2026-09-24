@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { version } from '../package.json'
 import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useAccount } from 'wagmi'
-import { useSafeAvatar } from './avatar'
+import { useSafeAvatar, AvatarImg } from './avatar'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { createPublicClient, http, hexToString } from 'viem'
 import { normalize } from 'viem/ens'
@@ -415,7 +415,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
     <div className="detail-page fade-in">
       <div className="detail-header">
         <div className="detail-header-content">
-          {ensAvatar && <img src={ensAvatar} alt="" className="ens-avatar" />}
+          <AvatarImg src={ensAvatar} className="ens-avatar" />
           <div>
             <div className="detail-label">Address</div>
             <div className="detail-address-row">
@@ -690,7 +690,7 @@ function ClaimAddressCell({ address }) {
   const ensAvatar = useSafeAvatar(ensName)
   return (
     <div className="claim-address-cell">
-      {ensAvatar && <img src={ensAvatar} alt="" className="ens-avatar-sm" />}
+      <AvatarImg src={ensAvatar} className="ens-avatar-sm" />
       <div>
         <a href={`/eth/${address}`} className="address-link">
           {ensName || `${address.slice(0, 8)}...${address.slice(-6)}`}
