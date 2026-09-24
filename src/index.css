@@ -935,7 +935,8 @@ a.proof-link:hover {
     font-size: 21px;
   }
 
-  .topbar-action-link {
+  /* Phones: drop the Attest link (it's in the footer), keep the wallet button. */
+  .topbar-action-link:not(.topbar-connect-btn) {
     display: none;
   }
 
