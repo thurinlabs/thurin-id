@@ -268,7 +268,7 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
 
     Promise.all(
       proofs.map(p =>
-        verifyProof(p, keyInfo.fingerprint, import.meta.env.VITE_NEYNAR_API_KEY).then(result => ({ index: p.index, result }))
+        verifyProof(p, keyInfo.fingerprint).then(result => ({ index: p.index, result }))
       )
     ).then(results => {
       if (cancelled) return
@@ -1276,7 +1276,6 @@ function Explorer() {
             {preview && (
               <IdentityKitProvider
                 rpcUrl={RPC_URL}
-                neynarApiKey={import.meta.env.VITE_NEYNAR_API_KEY}
                 network={NETWORK}
               >
                 <LookupPreview
@@ -1285,7 +1284,6 @@ function Explorer() {
                   name={preview.type === 'ens' ? preview.value : null}
                   resolving={previewResolving}
                   notFound={previewNotFound}
-                  neynarApiKey={import.meta.env.VITE_NEYNAR_API_KEY}
                   onOpen={handleLookup}
                 />
               </IdentityKitProvider>
@@ -1298,7 +1296,6 @@ function Explorer() {
         <>
           <IdentityKitProvider
             rpcUrl={RPC_URL}
-            neynarApiKey={import.meta.env.VITE_NEYNAR_API_KEY}
             network={NETWORK}
             baseUrl={links.self}
           >

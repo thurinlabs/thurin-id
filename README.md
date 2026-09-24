@@ -26,9 +26,10 @@ npm run dev
 Requires a `.env` file:
 
 ```
-VITE_NEYNAR_API_KEY=YOUR_NEYNAR_KEY
 VITE_WALLETCONNECT_PROJECT_ID=YOUR_REOWN_PROJECT_ID
 ```
+
+Production builds (`npm run build`) use the committed `.env.production` instead, so anyone can rebuild a deployed version byte for byte ([Verify a deploy](https://docs.thurin.id/#/guides/verify-deploy)); it holds only the WalletConnect project ID and the relay URL, both public by design: every thurin.id page already ships them.
 
 Reads go to the keyless public RPC `https://ethereum.publicnode.com` by default: the v2 registry needs only plain contract calls, so no API key is needed or shipped. `VITE_RPC_URL` points the build somewhere else; visitors can also pick their own in the footer (saved in their browser). Transactions always go through the visitor's wallet.
 
@@ -52,7 +53,7 @@ The explorer reads attestations straight from the `PGPRegistry` contract — his
 
 - **GitHub** — fetches the gist via GitHub API, checks ownership and for `openpgp4fpr:FINGERPRINT`
 - **DNS** — queries TXT records via Cloudflare DNS-over-HTTPS, checks for `openpgp4fpr:FINGERPRINT`
-- **Farcaster** — resolves the user's FID, scans recent casts via Neynar, checks for `openpgp4fpr:FINGERPRINT`
+- **Farcaster** — resolves the user's FID, scans recent casts on a public Farcaster node (Quilibrium's keyless Hypersnap node by default), checks for `openpgp4fpr:FINGERPRINT`
 - **Codeberg** — checks the repository description
 - **Mastodon** — checks profile metadata
 
@@ -64,7 +65,7 @@ The explorer reads attestations straight from the `PGPRegistry` contract — his
 
 **Who your browser talks to** when it checks an identity, and so sees your IP and which identity you looked at:
 - an Ethereum node: the keyless `ethereum.publicnode.com` by default, or your own (footer → Change);
-- the platforms behind each proof (GitHub, Codeberg, Cloudflare DNS, Neynar, the named Mastodon server) and EFP;
+- the platforms behind each proof (GitHub, Codeberg, Cloudflare DNS, the public Farcaster node, the named Mastodon server) and EFP;
 - for avatars, euc.li or an IPFS gateway, never a server the name's owner picked.
 
 Wallets connect only when you choose to. The full answer, including what isn't solved: [CROPS](https://docs.thurin.id/#/crops) · [privacy policy](https://thurinlabs.id/privacy/).

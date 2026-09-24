@@ -52,7 +52,7 @@ function Row({ label, value, status, ok }) {
  * (the ENS name typed, if any), `resolving`, `notFound` (a name that does not
  * resolve), `onOpen(value)` for the full-page link.
  */
-export default function LookupPreview({ address, name, resolving, notFound, neynarApiKey, onOpen }) {
+export default function LookupPreview({ address, name, resolving, notFound, onOpen }) {
   const { claims, isLoading } = useAttestations(address || undefined)
 
   // A typed address gets its ENS name and avatar back; a typed name gets its avatar.
@@ -93,7 +93,7 @@ export default function LookupPreview({ address, name, resolving, notFound, neyn
       unique.forEach(async (p) => {
         let r
         try {
-          r = await verifyProof(p, claim.fingerprint, neynarApiKey)
+          r = await verifyProof(p, claim.fingerprint)
         } catch (err) {
           r = { verified: false, reason: err.message }
         }
@@ -101,7 +101,7 @@ export default function LookupPreview({ address, name, resolving, notFound, neyn
       })
     })()
     return () => { cancelled = true }
-  }, [claim, neynarApiKey])
+  }, [claim])
 
   const allDone = !!claim && parsed && proofs.every(p => results[p.url])
   const headline = displayName || (address ? shortAddress(address) : null)
