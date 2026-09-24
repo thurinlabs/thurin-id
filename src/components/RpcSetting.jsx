@@ -53,7 +53,7 @@ export default function RpcSetting() {
       </span>
       {open && (
         <div className="rpc-setting-panel">
-          <p>The RPC sees your IP and every identity you look up. Use your own node to keep that to yourself. Saved in this browser only; wallet transactions still go through your wallet.</p>
+          <p>The RPC sees your IP and every identity you look up, and it's also where this site waits for your transactions to confirm. Your wallet sends them through its own RPC. Use your own node to keep all of that to yourself. Saved in this browser only.</p>
           <input type="url" value={url} placeholder="https://your-node.example/rpc" spellCheck={false}
             onChange={(e) => { setUrl(e.target.value); setStatus(null) }} aria-label="RPC URL" />
           <div className="rpc-setting-actions">
