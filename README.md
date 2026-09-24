@@ -56,6 +56,19 @@ The explorer reads attestations straight from the `PGPRegistry` contract — his
 - **Codeberg** — checks the repository description
 - **Mastodon** — checks profile metadata
 
+## Privacy
+
+**Public by design:** a claim is your Ethereum address, your PGP key with the names on it, the proofs you chose, and when. It's on Ethereum, readable by anyone, forever. That's the product, so `/attest` shows exactly what will be published before you publish, and leaves email addresses off the key by default.
+
+**Not collected:** no accounts, no cookies, no analytics, no telemetry. Our servers keep no access logs.
+
+**Who your browser talks to** when it checks an identity, and so sees your IP and which identity you looked at:
+- an Ethereum node: the keyless `ethereum.publicnode.com` by default, or your own (footer → Change);
+- the platforms behind each proof (GitHub, Codeberg, Cloudflare DNS, Neynar, the named Mastodon server) and EFP;
+- for avatars, euc.li or an IPFS gateway, never a server the name's owner picked.
+
+Wallets connect only when you choose to. The full answer, including what isn't solved: [CROPS](https://docs.thurin.id/#/crops) · [privacy policy](https://thurinlabs.id/privacy/).
+
 ## Routes
 
 | Path | What |
