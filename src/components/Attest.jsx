@@ -3,7 +3,7 @@ import { useAccount, useWriteContract, useReadContract, useReadContracts } from 
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import * as openpgp from 'openpgp'
 import { createPublicClient, http, stringToHex, hexToString } from 'viem'
-import { stripEmailUserIDs, hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint } from '@thurinlabs/identity-kit'
+import { stripEmailUserIDs, hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyClearsigned, verifyAttestation } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 import { readHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
@@ -138,18 +138,20 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         if (!signedText.toLowerCase().includes(address.toLowerCase())) {
           throw new Error(`the signed line doesn't name your connected address. Copy the command again: it has to sign "${gpgPayload(address)}".`)
         }
-        // `--export "<email>"` can print several keys: use the one that made the signature.
+        // `--export "<email>"` can print several keys: use the one that made the signature. The
+        // check is the kit's, the same one every lookup runs (curve policy, key valid now).
         const keys = await openpgp.readKeys({ armoredKeys: key })
+        const issuer = message.signature.packets[0]?.issuerKeyID
         let publicKey = null
+        let ownKeyReason = null // the signer's key is in the paste, but the signature didn't verify
         for (const k of keys) {
-          try {
-            const { signatures } = await openpgp.verify({ message, verificationKeys: k })
-            await signatures[0].verified
-            publicKey = k
-            break
-          } catch { /* not this key */ }
+          const v = await verifyClearsigned({ armoredKey: k.armor(), clearsigned: sig })
+          if (v.verified) { publicKey = k; break }
+          if (issuer && k.getKeys(issuer).length) ownKeyReason = v.reason || 'verification failed'
         }
-        if (!publicKey) throw new Error(`the signature doesn't match the key in the paste. Run the whole command again and paste all of its output.`)
+        if (!publicKey) throw new Error(ownKeyReason
+          ? `the key that signed is in the paste, but its signature doesn't verify (${ownKeyReason}). If \`echo test | gpg --clearsign | gpg --verify\` says BAD too, it's your gpg setup, not this page.`
+          : `the signature doesn't match the key in the paste. Run the whole command again and paste all of its output.`)
         const fingerprint = publicKey.getFingerprint().toUpperCase()
         if (wantedFingerprint && fingerprint !== wantedFingerprint) {
           throw new Error(`this was signed by ${spacedFingerprint(fingerprint)}, not ${spacedFingerprint(wantedFingerprint)}.`)
@@ -198,6 +200,15 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         if (cancelled) return
         setPreview(null); onVerified(null)
         setStatus({ type: 'err', msg: `The key to publish is ${(bytes / 1024).toFixed(1)} KB, over the ${MAX_PUBKEY_BYTES / 1024} KB on-chain limit. It likely has large photos or many signatures on it; the command already leaves most of those out.` })
+        return
+      }
+
+      // What a lookup will run on the published claim, run now on exactly those bytes.
+      const check = await verifyAttestation({ pgpPublicKey: armored, pgpSignature: verified.sig, fingerprint: verified.fingerprint, ethAddress: address })
+      if (cancelled) return
+      if (!check.verified) {
+        setPreview(null); onVerified(null)
+        setStatus({ type: 'err', msg: `The key as it would be published doesn't verify (${check.reason}). Nothing was sent.` })
         return
       }
 
