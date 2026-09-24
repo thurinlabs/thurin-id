@@ -1,4 +1,5 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
+import { safeWallet, rainbowWallet, base, metaMaskWallet, ledgerWallet, trustWallet, zerionWallet } from '@rainbow-me/rainbowkit/wallets'
 import { http } from 'wagmi'
 import { mainnet, sepolia, foundry } from 'wagmi/chains'
 import { getRegistry, isNetworkName, REGISTRY_ABI } from '@thurinlabs/identity-kit'
@@ -28,9 +29,19 @@ export const RPC_URL = NETWORK === 'local'
 // One chain per build. Offering a second one (tried for phone wallets without testnets)
 // let the app sit on the wrong network without complaint; with a single chain RainbowKit
 // shows "Wrong network" and offers the switch, and every write is pinned to CHAIN.id.
+//
+// The wallet list is RainbowKit's default minus `walletConnectWallet`. That one entry runs
+// WalletConnect's own modal (Reown AppKit), which starts at page load and posts an analytics
+// event with the full page URL (i.e. which identity is being viewed) to pulse.walletconnect.org,
+// with no switch to turn it off. Every wallet below uses RainbowKit's own QR code instead;
+// browser-extension wallets still show up on their own (EIP-6963).
 export const config = getDefaultConfig({
   appName: 'Thurin',
   projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID,
+  wallets: [
+    { groupName: 'Popular', wallets: [safeWallet, rainbowWallet, base, metaMaskWallet] },
+    { groupName: 'More', wallets: [ledgerWallet, trustWallet, zerionWallet] },
+  ],
   chains: [CHAIN],
   transports: {
     [CHAIN.id]: http(RPC_URL),
