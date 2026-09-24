@@ -26,11 +26,11 @@ npm run dev
 Requires a `.env` file:
 
 ```
-VITE_ALCHEMY_RPC_URL=https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY
 VITE_NEYNAR_API_KEY=YOUR_NEYNAR_KEY
+VITE_WALLETCONNECT_PROJECT_ID=YOUR_REOWN_PROJECT_ID
 ```
 
-`VITE_ALCHEMY_RPC_URL` is optional for reads (the v2 registry needs only `eth_call`, so the keyless public default works); it is still the RPC the wallet flow uses.
+Reads go to the keyless public RPC `https://ethereum.publicnode.com` by default: the v2 registry needs only plain contract calls, so no API key is needed or shipped. `VITE_RPC_URL` points the build somewhere else; visitors can also pick their own in the footer (saved in their browser). Transactions always go through the visitor's wallet.
 
 ## Running against a local chain or Sepolia
 
@@ -42,7 +42,7 @@ The PGPRegistry v2 has the same address on every network (`0x9302E02e2869e129aC8
 VITE_CHAIN=local npm run dev
 ```
 
-**Sepolia:** `VITE_CHAIN=sepolia npm run dev`. Your Alchemy key serves Sepolia from the same app (`eth-sepolia` host, swapped automatically). Get test ETH from a Sepolia faucet.
+**Sepolia:** `VITE_CHAIN=sepolia npm run dev`. Reads go to `https://ethereum-sepolia.publicnode.com` (`VITE_SEPOLIA_RPC_URL` to override). Get test ETH from a Sepolia faucet.
 
 Production builds leave `VITE_CHAIN` unset, so they stay on mainnet.
 

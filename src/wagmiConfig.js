@@ -17,14 +17,14 @@ export const REGISTRY_ADDRESS = REGISTRY.address
 export const EXPLORER_URL = REGISTRY.explorerUrl // '' on local: no explorer links
 export { REGISTRY_ABI }
 
-// Alchemy serves every network from the same app key; swap the host for Sepolia
-// unless a dedicated URL is given. Local talks to anvil directly.
-const MAINNET_RPC = import.meta.env.VITE_ALCHEMY_RPC_URL
+// Default reads go to a keyless public RPC (PublicNode): the site makes only plain contract
+// reads, so no API key is needed, and none ships in the bundle. VITE_RPC_URL overrides it for
+// this network (VITE_SEPOLIA_RPC_URL / VITE_LOCAL_RPC_URL for those); anvil for local.
 export const DEFAULT_RPC_URL = NETWORK === 'local'
   ? (import.meta.env.VITE_LOCAL_RPC_URL || REGISTRY.defaultRpcUrl)
   : NETWORK === 'sepolia'
-    ? (import.meta.env.VITE_SEPOLIA_RPC_URL || (MAINNET_RPC || '').replace('eth-mainnet', 'eth-sepolia') || REGISTRY.defaultRpcUrl)
-    : (MAINNET_RPC || REGISTRY.defaultRpcUrl)
+    ? (import.meta.env.VITE_SEPOLIA_RPC_URL || REGISTRY.defaultRpcUrl)
+    : (import.meta.env.VITE_RPC_URL || REGISTRY.defaultRpcUrl)
 
 // A visitor can read through their own RPC instead (footer → Change). Saved in this browser
 // only, per network; every read, gas estimate, and receipt below uses it. Writes still go
