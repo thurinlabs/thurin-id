@@ -1396,3 +1396,18 @@ a.proof-link:hover {
 .record-form select { margin-bottom: 6px; }
 .record-form textarea { resize: vertical; }
 .record-form select:focus, .record-form textarea:focus { outline: none; border-color: var(--color-primary); }
+
+/* ─── Account menu: the connected wallet in the top bar ──────────────────── */
+.account-menu { position: relative; }
+.account-menu-list {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
+  min-width: 150px; display: flex; flex-direction: column;
+  background: var(--color-surface); border: 1px solid var(--color-border);
+}
+.account-menu-item {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--color-text-muted); background: none; border: none; text-align: left;
+  padding: 9px 12px; cursor: pointer; white-space: nowrap;
+}
+.account-menu-item + .account-menu-item { border-top: 1px solid var(--color-border); }
+.account-menu-item:hover, .account-menu-item:focus { color: var(--color-primary); outline: none; background: var(--color-surface-deep); }

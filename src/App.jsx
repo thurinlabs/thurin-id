@@ -24,6 +24,7 @@ import { siteLinks } from './links'
 import Attest from './components/Attest'
 import LookupPreview from './components/LookupPreview'
 import EnsRecordLine from './components/EnsRecordLine'
+import AccountMenu from './components/AccountMenu'
 import IdentityTabs from './components/IdentityTabs'
 import RecordsTab from './components/RecordsTab'
 
@@ -166,6 +167,18 @@ function ThemeSelect({ storageKey }) {
 }
 
 function Topbar({ isAttest }) {
+  // Your own identity page: by ENS name when the wallet has one, else by address. /attest is a
+  // separate page load, so from there it's a plain navigation; elsewhere it's an in-app route.
+  const goToIdentity = (account) => {
+    const [type, value] = account.ensName ? ['ens', account.ensName] : ['address', account.address]
+    if (isAttest) {
+      const prefix = type === 'ens' ? 'ens' : 'eth'
+      window.location.href = usesPathRouting() ? `/${prefix}/${encodeURIComponent(value)}` : `./#/${prefix}/${encodeURIComponent(value)}`
+      return
+    }
+    pushRoute(type, value)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }
   return (
     <nav className="topbar">
       {/* One product, one chrome. The route is read once on mount, so moving
@@ -207,7 +220,8 @@ function Topbar({ isAttest }) {
               if (!mounted) return null
               if (!account) return <button className="topbar-action-link topbar-connect-btn" onClick={openConnectModal}>Connect</button>
               if (chain?.unsupported) return <button className="topbar-action-link topbar-connect-btn wrong" onClick={openChainModal} title={`Switch to ${NETWORK}`}>Wrong network</button>
-              return <button className="topbar-action-link topbar-connect-btn" onClick={openAccountModal} title={account.address}>{account.ensName || account.displayName}</button>
+              return <AccountMenu label={account.ensName || account.displayName} address={account.address}
+                onIdentity={() => goToIdentity(account)} onWallet={openAccountModal} />
             }}
           </ConnectButton.Custom>
         </div>
