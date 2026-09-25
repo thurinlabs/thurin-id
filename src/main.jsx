@@ -1,7 +1,7 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import ReactDOM from 'react-dom/client'
 import { WagmiProvider } from 'wagmi'
-import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
+import { RainbowKitProvider, darkTheme, lightTheme } from '@rainbow-me/rainbowkit'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { config, CHAIN } from './wagmiConfig'
 import App from './App'
@@ -30,20 +30,30 @@ const queryClient = new QueryClient({
   },
 })
 
+// The wallet UI follows the site's mode (the <html data-theme> the toggle sets), switching live.
+const WALLET_THEMES = {
+  dark: darkTheme({ accentColor: '#c9a227', accentColorForeground: '#141010', borderRadius: 'medium' }),
+  light: lightTheme({ accentColor: '#5a7228', accentColorForeground: '#faf9f5', borderRadius: 'medium' }),
+}
+const siteMode = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
+
+function WalletKit({ children }) {
+  const [mode, setMode] = useState(siteMode)
+  useEffect(() => {
+    const observer = new MutationObserver(() => setMode(siteMode()))
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [])
+  return <RainbowKitProvider initialChain={CHAIN} theme={WALLET_THEMES[mode]}>{children}</RainbowKitProvider>
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider
-          initialChain={CHAIN}
-          theme={darkTheme({
-            accentColor: '#c9a227',
-            accentColorForeground: '#141010',
-            borderRadius: 'medium',
-          })}
-        >
+        <WalletKit>
           <App />
-        </RainbowKitProvider>
+        </WalletKit>
       </QueryClientProvider>
     </WagmiProvider>
   </React.StrictMode>

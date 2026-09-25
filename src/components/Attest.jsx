@@ -2,8 +2,9 @@ import { Fragment, useState, useCallback, useMemo, useEffect } from 'react'
 import { useAccount, useWriteContract, useReadContract, useReadContracts } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import * as openpgp from 'openpgp'
-import { createPublicClient, http, toHex } from 'viem'
+import { createPublicClient, http, toHex, encodeFunctionData } from 'viem'
 import { payloadText, asArmor } from '../payload'
+import { kindLabel } from '../recordLabels'
 import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyAttestation, verifyStatementSignature, leanKey, claimSignature } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 import { readHandoff } from '../handoff'
@@ -299,7 +300,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
       {(active || done) && manual && (
         <div className="fade-in">
           <p className="helper">
-            Run this in a terminal. It signs a line naming your address and prints your public key.
+            Run this in a terminal. It signs a line naming your Ethereum address and prints your public key.
             Don't have a PGP key? <a href="https://docs.thurin.id/#/guides/getting-started" target="_blank" rel="noopener noreferrer">Make one first</a>.
           </p>
           <div className="command-block wrap"><span className="prompt">$ </span>{command}</div>
@@ -420,6 +421,17 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
     chainId: CHAIN.id, query: { enabled: replacing && !!attestation?.ethAddress },
   })
   const moving = movingRecords ? movingRecords[0].filter((_, i) => movingRecords[1][i]) : []
+  // Where this address stands with the key: after "compromised" it can never claim it again.
+  const { data: keyStatus } = useReadContract({
+    address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'keyStatus',
+    args: attestation?.ethAddress && attestation?.gpgFingerprint ? [attestation.ethAddress, fingerprintToBytes(attestation.gpgFingerprint)] : undefined,
+    chainId: CHAIN.id, query: { enabled: !!attestation?.ethAddress && !!attestation?.gpgFingerprint },
+  })
+  const keyCompromised = keyStatus === 'compromised'
+  const [oldCompromised, setOldCompromised] = useState(false)
+  // The names going on-chain, and any email among them (only there when the email box is ticked).
+  const publishedNames = attestation?.gpgMeta?.userIDs ?? []
+  const publishedEmails = publishedNames.map(u => u.match(/<([^<>\s]+@[^<>\s]+)>/)?.[1]).filter(Boolean)   // replacing a stolen key: lock it in the same transaction
   const replacedFp = replacing ? activeClaims.find(c => c.index === replaceIndex)?.fingerprint : null
   const newKey = !!replacedFp && !!attestation && replacedFp !== attestation.gpgFingerprint?.toLowerCase()
 
@@ -443,13 +455,26 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
         attestation.gpgPublicKeyHex,
       ]
       // `reattest` revokes the chosen claim and publishes the new one in a single transaction; the
-      // old claim's records move to the new one.
-      const hash = replaceIndex !== null && replaceIndex !== undefined
+      // old claim's records move to the new one. A stolen old key is also marked compromised, in the
+      // same transaction (`multicall`), so this address can never claim it again.
+      const reattestArgs = [BigInt(replaceIndex ?? 0), ...payload, true]
+      const hash = replacing && oldCompromised && newKey
+        ? await writeContractAsync({
+            address: REGISTRY_ADDRESS,
+            abi: REGISTRY_ABI,
+            functionName: 'multicall',
+            args: [[
+              encodeFunctionData({ abi: REGISTRY_ABI, functionName: 'reattest', args: reattestArgs }),
+              encodeFunctionData({ abi: REGISTRY_ABI, functionName: 'revoke', args: [BigInt(replaceIndex), 'compromised'] }),
+            ]],
+            chainId: CHAIN.id,
+          })
+        : replacing
         ? await writeContractAsync({
             address: REGISTRY_ADDRESS,
             abi: REGISTRY_ABI,
             functionName: 'reattest',
-            args: [BigInt(replaceIndex), ...payload, true],
+            args: reattestArgs,
             chainId: CHAIN.id,
           })
         : await writeContractAsync({
@@ -493,7 +518,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
       {done && attestation && (
         <div className="fade-in">
           <div className="status ok">
-            Your claim is on-chain. Your address and your PGP key now point at each other, and anyone can check it.
+            Your PGP key is on your Ethereum address now, and anyone can check that both are yours.
           </div>
 
           <div style={{ marginTop: 16 }} className="row">
@@ -520,9 +545,10 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
       {active && !done && attestation && (
         <div className="fade-in">
           <p className="helper">
-            Publishing from your connected wallet proves the address is yours. What's stored: your address,
-            this key with the name above, and the signed line. Readable by anyone, from any Ethereum node,
-            for good. You can revoke it later but not erase it.
+            Publishing from your connected wallet proves this Ethereum address is yours. What's stored: your
+            Ethereum address, this key with the {publishedNames.length > 1 ? 'names' : 'name'} above
+            {publishedEmails.length > 0 && <>, including your email ({publishedEmails.join(', ')})</>}, and the
+            signed line. Readable by anyone, from any Ethereum node, for good. You can revoke it later but not erase it.
           </p>
 
           {activeClaims.length > 0 && (
@@ -531,7 +557,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
               <select
                 value={replaceIndex === null || replaceIndex === undefined ? '' : String(replaceIndex)}
                 onChange={e => setReplaceIndex(e.target.value === '' ? null : Number(e.target.value))}
-                style={{ marginTop: 6 }}
+                style={{ marginTop: 6, width: '100%', maxWidth: '100%' }}
               >
                 <option value="">No — add alongside my active claims</option>
                 {activeClaims.map(c => (
@@ -540,10 +566,16 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
                   </option>
                 ))}
               </select>
+              {replacing && newKey && (
+                <label className="checkbox-row" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 8 }}>
+                  <input type="checkbox" checked={oldCompromised} onChange={e => setOldCompromised(e.target.checked)} />
+                  <span className="helper prose" style={{ margin: 0 }}>The old key was compromised. It's marked so, and this address can never claim it again.</span>
+                </label>
+              )}
               {replacing && moving.length > 0 && (
-                <div className="helper" style={{ marginTop: 8 }}>
-                  Its {moving.length === 1 ? 'record moves' : `${moving.length} records move`} to the new claim.
-                  {newKey && moving.includes('thurin.canary') && ' Your canary was signed by the old key: sign a new one with the new key after publishing.'}
+                <div className="helper prose" style={{ marginTop: 8 }}>
+                  The {moving.length === 1 ? 'record' : 'records'} on #{replaceIndex} ({moving.map(kindLabel).join(', ')}) {moving.length === 1 ? 'moves' : 'move'} to the new claim.
+                  {newKey && moving.includes('thurin.canary') && ' Your canary was signed by the old key. After publishing, edit it and sign it again with the new key.'}
                 </div>
               )}
               {activeClaims.some(c => c.fingerprint === attestation.gpgFingerprint.toLowerCase()) && (replaceIndex === null || replaceIndex === undefined) && (
@@ -554,7 +586,16 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={handlePublish} disabled={publishStatus?.type === 'info' || empty} title={empty ? 'This address has no ETH for the fee' : undefined}>
+          {keyCompromised && (
+            <div className="status err" style={{ marginBottom: 12 }}>
+              You revoked this key as compromised, so this address can't claim it again. Use a new key.
+            </div>
+          )}
+          {keyStatus === 'revoked' && (
+            <p className="helper">You revoked this key before. Publishing makes a new claim; the old one stays revoked.</p>
+          )}
+
+          <button className="btn btn-primary" onClick={handlePublish} disabled={publishStatus?.type === 'info' || empty || keyCompromised} title={empty ? 'This address has no ETH for the fee' : keyCompromised ? 'This key was revoked as compromised' : undefined}>
             {publishStatus?.type === 'info' ? 'Publishing…' : (replacing ? 'Replace & Publish' : 'Publish to Registry')}
           </button>
 
@@ -808,7 +849,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
     <div className="step active">
       <div className="step-header">
         <span className="step-title">Your claims</span>
-        <span className="step-badge">none yet</span>
+        <span className="step-badge muted">none yet</span>
       </div>
       <p className="helper">This wallet has no claim yet.</p>
       <button className="btn btn-primary" onClick={onCreate}>Create your first claim</button>
@@ -873,7 +914,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                 </td>
                 <td className="att-date">{formatDate(a.createdAt)}</td>
                 <td>
-                  <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`} title={a.revokeReason && a.state === 'revoked' ? `Reason: ${a.revokeReason}` : undefined}>
+                  <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`} title={a.revokeReason === 'compromised' ? 'Its key was marked compromised' : a.revokeReason && a.state === 'revoked' ? `Reason: ${a.revokeReason}` : undefined}>
                     {a.state === 'replaced' ? `replaced → #${a.replacedBy}` : a.revoked ? 'revoked' : 'active'}
                   </span>
                 </td>
@@ -892,9 +933,21 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                       </button>
                     </div>
                   )}
+                  {a.revoked && a.revokeReason !== 'compromised' && (
+                    <div className="att-actions">
+                      <button
+                        className="btn btn-sm"
+                        onClick={() => setConfirmRevoke(confirmRevoke === a.index ? null : a.index)}
+                        disabled={revokeStatus[a.index]?.type === 'info' || attestations.some(o => !o.revoked && o.fingerprint === a.fingerprint)}
+                        title={attestations.some(o => !o.revoked && o.fingerprint === a.fingerprint) ? 'This key has an active claim here; revoke that one as compromised' : 'Found out this key was compromised'}
+                      >
+                        {revokeStatus[a.index]?.type === 'info' ? 'Marking…' : 'Mark compromised'}
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
-              {(revokeStatus[a.index]?.type === 'ok' || revokeStatus[a.index]?.type === 'err' || (!a.revoked && emailByIndex[a.index])) && (
+              {(revokeStatus[a.index]?.type === 'err' || (!a.revoked && emailByIndex[a.index])) && (
                 <tr className="att-note-row">
                   <td colSpan={5} style={{ padding: '0 16px 10px' }}>
                     {!a.revoked && emailByIndex[a.index] && (
@@ -903,11 +956,20 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                         Email included on this claim
                       </div>
                     )}
-                    {revokeStatus[a.index] && revokeStatus[a.index].type !== 'info' && (
-                      <span className={`status ${revokeStatus[a.index].type}`} style={{ fontSize: '12px' }}>
-                        {revokeStatus[a.index].msg}
-                      </span>
+                    {revokeStatus[a.index]?.type === 'err' && (
+                      <div className="status err" style={{ marginTop: 4 }}>{revokeStatus[a.index].msg}</div>
                     )}
+                  </td>
+                </tr>
+              )}
+              {confirmRevoke === a.index && a.revoked && (
+                <tr key={`${a.index}-compromised`} className="att-update-row">
+                  <td colSpan={5} style={{ padding: '4px 8px 12px' }}>
+                    <div className="row" style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span className="helper" style={{ margin: 0 }}>Mark #{a.index}'s key as compromised? This address can never claim it again.</span>
+                      <button className="btn btn-sm" onClick={() => handleRevoke(a.index, 'compromised')}>Mark compromised</button>
+                      <button className="btn btn-sm" onClick={() => setConfirmRevoke(null)}>Keep</button>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -918,7 +980,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                       <span className="helper" style={{ margin: 0 }}>Revoke #{a.index} for good? Reason:</span>
                       <select value={revokeReason} onChange={e => setRevokeReason(e.target.value)}>
                         <option value="">none given</option>
-                        <option value="compromised">compromised: the key may be in someone else's hands</option>
+                        <option value="compromised">compromised: the key may be in someone else's hands (this address can't claim it again)</option>
                         <option value="retired">retired: no longer used</option>
                         <option value="other">other</option>
                       </select>
@@ -1060,22 +1122,17 @@ export default function Attest() {
           </>
         ) : isConnected && myLoaded && activeClaims.length > 0 ? (
           <p className="helper">
-            Attest links your Ethereum address to your PGP key. This wallet already has a claim:
-            update or replace it under <strong>Your claims</strong>, or make a new one.
+            Add your PGP key to your Ethereum address. This address already has one: update or replace
+            it under <strong>Your claims</strong>, or add another.
           </p>
         ) : (
           <>
             <p className="helper">
-              Attest links your Ethereum address to your PGP key, so anyone can check that both belong to
-              the same person. One command, one paste, one transaction.
-            </p>
-            <p className="helper">
-              What goes on-chain: your address, your key's fingerprint, one name from your key, and the
-              proofs on it. Your email stays off unless you say so.
+              Add your PGP key to your Ethereum address. You sign one line with <code>gpg</code>, paste
+              the output here, and publish from your wallet.
             </p>
             <p className="helper" style={{ marginBottom: 24 }}>
-              You'll need a wallet, a PGP key with <code>gpg</code> in a terminal <em>(desktop only)</em>,
-              and a little ETH for the fee.
+              You'll need <code>gpg</code> in a terminal <em>(desktop only)</em> and a little ETH for the fee.
             </p>
           </>
         )}

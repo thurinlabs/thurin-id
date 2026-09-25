@@ -153,24 +153,28 @@ function pushRoute(type, value, tab = 'overview') {
 
 // ─── Topbar ─────────────────────────────────────────────────────────────────
 
-function ThemeSelect({ storageKey }) {
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem(storageKey) || 'thurin'
-  )
-
-  const handleChange = (e) => {
-    const id = e.target.value
-    setTheme(id)
-    document.documentElement.dataset.theme = id
-    localStorage.setItem(storageKey, id)
+// Dark (the Thurin look) or light, one icon button: a moon in light mode, a sun in dark.
+function ThemeToggle({ storageKey }) {
+  const [theme, setTheme] = useState(() => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'))
+  const next = theme === 'light' ? 'dark' : 'light'
+  const toggle = () => {
+    setTheme(next)
+    document.documentElement.dataset.theme = next
+    try { localStorage.setItem(storageKey, next) } catch { /* private mode: the choice lasts this visit */ }
   }
-
   return (
-    <select className="theme-select" value={theme} onChange={handleChange}>
-      <option value="thurin">Thurin</option>
-      <option value="dark">Dark</option>
-      <option value="light">Light</option>
-    </select>
+    <button className="theme-toggle" onClick={toggle} aria-label={`Switch to ${next} mode`} title={`Switch to ${next} mode`}>
+      {theme === 'light' ? (
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" />
+        </svg>
+      )}
+    </button>
   )
 }
 
@@ -233,7 +237,7 @@ function Topbar({ isAttest }) {
             }}
           </ConnectButton.Custom>
         </div>
-        <ThemeSelect storageKey="thurin-theme" />
+        <ThemeToggle storageKey="thurin-theme" />
       </div>
     </nav>
   )
@@ -478,7 +482,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
       <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: count }} />
 
       {tab === 'records' && (
-        <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} armoredKey={latest?.pgpPublicKey} canEdit={isSelf} />
+        <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} armoredKey={latest?.pgpPublicKey} fingerprint={latest?.fingerprint ?? null} canEdit={isSelf} />
       )}
 
       {tab === 'claims' && (
@@ -572,8 +576,8 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
       {tab === 'claims' && attestations.length > 0 && (
         <div className="detail-history">
           <div className="detail-label">Claim History</div>
-          <div className="attestation-table-wrap">
-            <table className="attestation-table">
+          <div className="attestation-table-wrap stack">
+            <table className="attestation-table stack">
               <thead>
                 <tr>
                   <th>#<span className="info-icon" title="The claim's position in this address's history: 0 is the first it ever published. Never reused; records and the CLI's --index refer to it.">?</span></th>
@@ -894,7 +898,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
       <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: claims.length }} />
 
       {tab === 'records' && (
-        <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} armoredKey={bestClaim?.pgpPublicKey} canEdit={!!wallet && !!bestClaim && wallet.toLowerCase() === bestClaim.address.toLowerCase()} />
+        <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} armoredKey={bestClaim?.pgpPublicKey} fingerprint={bestClaim?.fingerprint ?? null} canEdit={!!wallet && !!bestClaim && wallet.toLowerCase() === bestClaim.address.toLowerCase()} />
       )}
 
       {tab === 'claims' && bestClaim?.pgpPublicKey && (
@@ -905,8 +909,8 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
       <div className="detail-summary">
         <div className="detail-label">Claims ({claims.length})</div>
         {activeClaims.length > 0 ? (
-          <div className="attestation-table-wrap">
-            <table className="attestation-table">
+          <div className="attestation-table-wrap stack">
+            <table className="attestation-table stack">
               <thead>
                 <tr>
                   <th>Address</th>
@@ -992,13 +996,13 @@ function Explorer() {
   const links = useMemo(() => siteLinks(), [])
   const [query, setQuery] = useState(() => parseRoute()?.value || '')
   const [submitted, setSubmitted] = useState(() => parseRoute())
-  const [cardTheme, setCardTheme] = useState(
-    () => document.documentElement.dataset.theme || 'thurin'
-  )
+  // The site's dark mode is the kit card's "thurin" theme.
+  const siteCardTheme = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'thurin')
+  const [cardTheme, setCardTheme] = useState(siteCardTheme)
 
   useEffect(() => {
     const observer = new MutationObserver(() => {
-      setCardTheme(document.documentElement.dataset.theme || 'thurin')
+      setCardTheme(siteCardTheme())
     })
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => observer.disconnect()

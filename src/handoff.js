@@ -12,26 +12,46 @@
 // carried, so what the page shows is what was signed.
 
 const OPS = ['attest', 'reattest', 'update-key', 'revoke', 'set-record']
-const REASONS = ['', 'compromised', 'retired', 'superseded', 'other']
+const REASONS = ['', 'compromised', 'retired', 'other']   // what an owner can give to revoke; "superseded" comes only from reattest
 const HEX = /^0x([0-9a-f]{2})+$/i
 const KEY_TAGS = ['98', '99', '9a', 'c6']          // public-key packet, old- or new-style header
 const SIG_TAGS = ['88', '89', '8a', 'c2']          // signature packet
 const isKeyHex = (v) => typeof v === 'string' && HEX.test(v) && KEY_TAGS.includes(v.slice(2, 4).toLowerCase())
 const isSignature = (v) => typeof v === 'string' && ((HEX.test(v) && SIG_TAGS.includes(v.slice(2, 4).toLowerCase())) || v.startsWith('-----BEGIN PGP SIGNED MESSAGE-----'))
 
-function fromBase64Url(s) {
+// The fragment is `<base64url JSON>[.<base64url key>[.<base64url signature>]]`: the key and signature
+// ride as their own raw bytes (half the length of hex inside the JSON). A signature part starting
+// with '-' is a clearsigned message (text); anything else is a raw signature packet.
+function bytesFromBase64Url(s) {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/')
   const bin = atob(b64 + '='.repeat((4 - b64.length % 4) % 4))
-  const bytes = Uint8Array.from(bin, c => c.charCodeAt(0))
-  return new TextDecoder().decode(bytes)
+  return Uint8Array.from(bin, c => c.charCodeAt(0))
+}
+function base64UrlFromBytes(bytes) {
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+const toHex = (bytes) => '0x' + Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+/** Bytes back to what a hand-off carries: text if they start with '-', else 0x hex. */
+const payloadValue = (bytes) => (bytes[0] === 0x2d ? new TextDecoder().decode(bytes) : toHex(bytes))
+/** 0x hex → its bytes; text → its UTF-8 bytes. */
+function payloadBytes(v) {
+  if (/^0x([0-9a-fA-F]{2})+$/.test(v)) return Uint8Array.from(v.slice(2).match(/../g), h => parseInt(h, 16))
+  return new TextEncoder().encode(v)
 }
 
 /** The hand-off in the current URL, or null. Throws only for a fragment that claims to be one and isn't. */
 export function readHandoff() {
-  const m = window.location.hash.match(/^#handoff=([A-Za-z0-9_-]+)$/)
+  const m = window.location.hash.match(/^#handoff=([A-Za-z0-9_.-]+)$/)
   if (!m) return null
   let h
-  try { h = JSON.parse(fromBase64Url(m[1])) } catch { throw new Error('This link is damaged: the hand-off could not be read.') }
+  try {
+    const [json, keyPart, sigPart] = m[1].split('.')
+    h = JSON.parse(new TextDecoder().decode(bytesFromBase64Url(json)))
+    if (h && keyPart) h.key = payloadValue(bytesFromBase64Url(keyPart))
+    if (h && sigPart) h.signature = payloadValue(bytesFromBase64Url(sigPart))
+  } catch { throw new Error('This link is damaged: the hand-off could not be read.') }
   if (h?.v !== 2) throw new Error(`This link uses hand-off format ${h?.v ?? '?'}; this page reads format 2. Update the CLI or the page.`)
   if (!OPS.includes(h.op)) throw new Error(`Unknown hand-off operation "${h.op}".`)
   if (!/^0x[0-9a-f]{40}$/.test(h.owner || '')) throw new Error('The hand-off has no valid owner address.')
@@ -60,14 +80,11 @@ export function readHandoff() {
   }
 }
 
-function toBase64Url(str) {
-  const bytes = new TextEncoder().encode(str)
-  let bin = ''
-  for (const b of bytes) bin += String.fromCharCode(b)
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
 /** The fragment value for a hand-off, as the CLI would print it. */
 export function encodeHandoff(h) {
-  return toBase64Url(JSON.stringify(h))
+  const { key, signature, ...rest } = h
+  const parts = [base64UrlFromBytes(new TextEncoder().encode(JSON.stringify(rest)))]
+  if (key) parts.push(base64UrlFromBytes(payloadBytes(key)))
+  if (signature) parts.push(base64UrlFromBytes(payloadBytes(signature)))
+  return parts.join('.')
 }

@@ -33,7 +33,8 @@
           localStorage.removeItem('thurin-scry-theme');
         }
       }
-      document.documentElement.dataset.theme = theme || 'thurin';
+      // Two modes: light, or dark (the Thurin look). Older choices ('thurin', the old 'dark') land on dark.
+      document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
       // Where path routes work (thurin.id, *.eth.limo via _redirects, local dev), pin
       // relative asset URLs to the site root so /eth/<addr> still loads ./assets/*.
       // Keep in sync with usesPathRouting() in src/App.jsx.

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useReadContract, useWriteContract, usePublicClient } from 'wagmi'
 import { pageRecords, parseRecord, checkRecordValue } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, EXPLORER_URL } from '../wagmiConfig'
+import { KIND_LABEL } from '../recordLabels'
 
 // Records on the claim this page speaks for, from `recordsOf`: Thurin's kinds first, each rendered
 // its own way, then anyone else's (reverse-dot names) as plain text, in the order they were set.
@@ -11,15 +12,6 @@ import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, EXPLORER_URL } from '../wagmiCon
 // supplies the kinds, order, and parsers.
 
 const DOCS = 'https://docs.thurin.id/#/records'
-const KIND_LABEL = {
-  'thurin.railgun': 'Pay privately',
-  'thurin.security': 'Security contact',
-  'thurin.successor': 'Successor key',
-  'thurin.affiliation': 'Affiliation',
-  'thurin.canary': 'Canary',
-  'thurin.private': 'Private',
-  'thurin.disclosure': 'Disclosure',
-}
 // What the owner can write from the page. private/disclosure are read-only kinds: writing
 // them is punted (on-chain history is forever; see the vault's Encrypt note).
 const EDITABLE = ['thurin.railgun', 'thurin.security', 'thurin.successor', 'thurin.affiliation', 'thurin.canary']
@@ -28,7 +20,14 @@ const HINT = {
   'thurin.security': 'Where to send sensitive reports: an email, a URL, or a line of instructions. Senders encrypt to the key on this claim.',
   'thurin.successor': 'The fingerprint of the key that replaces this one.',
   'thurin.affiliation': 'JSON: {"v":1,"with":"thurinlabs.eth","role":"founder"}. One side’s statement until the other side sets a matching one.',
-  'thurin.canary': 'A dated statement, e.g. "All keys under my control as of 2026-09-23." Paste it clearsigned by this key and the page shows it verified.',
+  'thurin.canary': () => `A dated statement, e.g. "All keys under my control as of ${today()}." Paste it clearsigned by this key and the page shows it verified.`,
+}
+const hintFor = (kind) => (typeof HINT[kind] === 'function' ? HINT[kind]() : HINT[kind])
+
+/** Today as YYYY-MM-DD in the visitor's own time zone. */
+function today() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 function copy(text, e) {
@@ -49,8 +48,8 @@ function Body({ r }) {
   if (!r.valid) {
     return (
       <>
-        <pre className="value" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{r.text}</pre>
-        <div className="value" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>{r.reason}</div>
+        <pre className="value prose" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{r.text}</pre>
+        <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>{r.reason}</div>
       </>
     )
   }
@@ -59,28 +58,28 @@ function Body({ r }) {
       return (
         <>
           <div className="value" style={{ wordBreak: 'break-all' }}>{d.address} <button className="copy-btn" onClick={(e) => copy(d.address, e)}>copy</button></div>
-          <div className="value" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>A Railgun 0zk address. Payments to it are shielded; only the owner sees them.</div>
+          <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>A Railgun 0zk address. Payments to it are shielded; only the owner sees them.</div>
         </>
       )
     case 'security':
       return (
         <>
           <div className="value">{d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="fingerprint-link">{d.url}</a> : d.contact}</div>
-          <div className="value" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>Where to send sensitive reports. Encrypt to the key on this claim.</div>
+          <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>Where to send sensitive reports. Encrypt to the key on this claim.</div>
         </>
       )
     case 'successor':
       return (
         <>
           <div className="value"><a href={`/pgp/${d.fingerprint.toUpperCase()}`} className="fingerprint-link">{d.fingerprint.toUpperCase()}</a></div>
-          <div className="value" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>The key that replaces this one.</div>
+          <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>The key that replaces this one.</div>
         </>
       )
     case 'affiliation':
       return (
         <>
           <div className="value"><a href={identityHref(d.with)} className="fingerprint-link">{d.with}</a>{d.role && <span style={{ color: 'var(--color-text-muted)' }}> · {d.role}</span>}</div>
-          <div className="value" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>Stated by this identity. Not yet acknowledged by the other side.</div>
+          <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>Stated by this identity. Not yet acknowledged by the other side.</div>
         </>
       )
     case 'canary':
@@ -95,23 +94,37 @@ function Body({ r }) {
             {d.clearsigned && d.verified === null && <span className="status-badge neutral" style={{ marginLeft: 8 }} title="Clearsigned, not checked">signed</span>}
             {!d.clearsigned && <span className="status-badge neutral" style={{ marginLeft: 8 }} title="Plain text, not signed">unsigned</span>}
           </div>
-          <pre className="value" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{d.statement}</pre>
+          <pre className="value prose" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{d.statement}</pre>
         </>
       )
     case 'encrypted':
       return (
-        <div className="value" style={{ color: 'var(--color-text-muted)' }}>
+        <div className="value prose" style={{ color: 'var(--color-text-muted)' }}>
           Encrypted, {r.bytes} bytes{d.recipients !== null && `, for ${d.recipients} key${d.recipients === 1 ? '' : 's'}`}. Readable only by {r.kind === 'thurin.private' ? 'the owner' : 'the people it was encrypted to'}.
         </div>
       )
     default:
-      return <pre className="value" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{r.text}</pre>
+      return <pre className="value prose" style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{r.text}</pre>
   }
+}
+
+// The canary's signing step: one command with today's date and this claim's key, like the attest page.
+function CanaryCommand({ fingerprint }) {
+  const command = `printf '%s\\n' 'All keys under my control as of ${today()}.' | gpg --clearsign -u ${fingerprint.toUpperCase()}`
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div className="value prose" style={{ color: 'var(--color-text-muted)', marginBottom: 6 }}>
+        A dated statement, clearsigned by the key on this claim so anyone can check it. Run this (change the words if you like, keep a date), then paste all of its output below:
+      </div>
+      <div className="command-block wrap"><span className="prompt">$ </span>{command}</div>
+      <button className="btn btn-sm" style={{ marginTop: 6 }} onClick={(e) => copy(command, e)}>copy command</button>
+    </div>
+  )
 }
 
 // The owner's form: pick a kind, type a value, one transaction. Validation is the kit's
 // parser, so what the page would refuse to render can't be published from here.
-function RecordForm({ index, armoredKey, existing, initialKind, initialValue, onDone, onCancel }) {
+function RecordForm({ index, armoredKey, fingerprint, existing, initialKind, initialValue, onDone, onCancel }) {
   const [kind, setKind] = useState(initialKind || 'thurin.security')
   const [value, setValue] = useState(initialValue || '')
   const [check, setCheck] = useState(null)
@@ -153,7 +166,11 @@ function RecordForm({ index, armoredKey, existing, initialKind, initialValue, on
           {EDITABLE.map(k => <option key={k} value={k}>{KIND_LABEL[k]} · {k}</option>)}
         </select>
       </div>
-      <div className="value" style={{ color: 'var(--color-text-muted)', marginBottom: 6 }}>{HINT[kind]}</div>
+      {kind === 'thurin.canary' && fingerprint ? (
+        <CanaryCommand fingerprint={fingerprint} />
+      ) : (
+        <div className="value prose" style={{ color: 'var(--color-text-muted)', marginBottom: 6 }}>{hintFor(kind)}</div>
+      )}
       <textarea value={value} onChange={e => { setValue(e.target.value); setStatus(null) }} rows={kind === 'thurin.canary' ? 6 : 2} spellCheck={false} placeholder={kind === 'thurin.affiliation' ? '{"v":1,"with":"…"}' : ''} />
       <div className="value" style={{ color: tooBig ? 'var(--color-error)' : 'var(--color-text-muted)', marginTop: 4 }}>
         {bytes} / 1024 bytes
@@ -199,7 +216,7 @@ function ClearButton({ index, kind, onDone }) {
   )
 }
 
-export default function RecordsTab({ owner, index, armoredKey, canEdit = false }) {
+export default function RecordsTab({ owner, index, armoredKey, fingerprint = null, canEdit = false }) {
   const enabled = !!owner && index !== null && index !== undefined
   const { data: raw, isLoading, refetch } = useReadContract({
     address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'recordsOf',
@@ -227,7 +244,7 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
       <div className="detail-history">
         <div className="mono-box">
           <div className="label">Records</div>
-          <div className="value" style={{ color: 'var(--color-text-muted)' }}>Records live on a verified claim. This identity has none yet.</div>
+          <div className="value prose" style={{ color: 'var(--color-text-muted)' }}>Records live on a verified claim. This identity has none yet.</div>
         </div>
       </div>
     )
@@ -240,7 +257,7 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
       {records.length === 0 ? (
         <div className="mono-box" style={{ marginBottom: 2 }}>
           <div className="label">Records</div>
-          <div className="value" style={{ color: 'var(--color-text-muted)' }}>{canEdit ? 'No records on your claim yet.' : 'No records on this claim.'}</div>
+          <div className="value prose" style={{ color: 'var(--color-text-muted)' }}>{canEdit ? 'No records on your claim yet.' : 'No records on this claim.'}</div>
           <div className="proof-docs-footer">
             <a href={DOCS} target="_blank" rel="noopener noreferrer">what records are</a>
           </div>
@@ -259,7 +276,7 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
             )}
           </div>
           {editing === r.kind
-            ? <RecordForm index={index} armoredKey={armoredKey} existing={records} initialKind={r.kind} initialValue={r.text} onDone={done} onCancel={() => setEditing(null)} />
+            ? <RecordForm index={index} armoredKey={armoredKey} fingerprint={fingerprint} existing={records} initialKind={r.kind} initialValue={r.text} onDone={done} onCancel={() => setEditing(null)} />
             : <Body r={r} />}
         </div>
       ))}
@@ -269,10 +286,10 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
         </div>
       )}
       {canEdit && editing === 'new' && (
-        <RecordForm index={index} armoredKey={armoredKey} existing={records} onDone={done} onCancel={() => setEditing(null)} />
+        <RecordForm index={index} armoredKey={armoredKey} fingerprint={fingerprint} existing={records} onDone={done} onCancel={() => setEditing(null)} />
       )}
       <div style={{ fontFamily: 'var(--mono)', color: 'var(--color-text-muted)', fontSize: 12, marginTop: 8 }}>
-        Records on claim #{index}: Thurin's kinds first, then others in the order they were set. {canEdit ? 'Owners can also set them from the CLI.' : 'Set from the CLI: thurin record set <kind> <value>'} · <a href={DOCS} target="_blank" rel="noopener noreferrer" className="fingerprint-link">the kinds</a>
+        Records on claim #{index}.{canEdit ? ' You can also set them with the CLI.' : ''} · <a href={DOCS} target="_blank" rel="noopener noreferrer" className="fingerprint-link">about records</a>
       </div>
     </div>
   )

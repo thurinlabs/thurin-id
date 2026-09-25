@@ -78,6 +78,11 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
     address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'claimsOf', args: [h.owner],
   })
   const target = h.index !== null && rows ? rows[h.index] : null   // the claim being replaced / updated / revoked
+  const claimsKey = h.op === 'attest' || h.op === 'reattest'
+  const { data: keyStatus } = useReadContract({
+    address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'keyStatus', args: [h.owner, fingerprintToBytes(h.fingerprint)],
+    query: { enabled: claimsKey },
+  })
 
   // Every check the registry and a lookup will make, before anyone pays.
   useEffect(() => {
@@ -97,6 +102,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
           ? 'This authorization was already used, or the owner has published something since signing it. Ask them for a new one.'
           : 'The nonce in this authorization is ahead of the chain; it cannot be submitted yet.')
       }
+      if (claimsKey && keyStatus === 'compromised') problems.push(`${shortAddr(h.owner)} revoked this key as compromised, so the registry won't take a new claim on it.`)
       if (!timeLeft(h.authorization.deadline)) problems.push(`This authorization expired on ${fmtDate(h.authorization.deadline)}. Ask ${shortAddr(h.owner)} for a new one.`)
       if (h.key) {
         const info = await parsePgpKey(h.key)
@@ -116,7 +122,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
       if (!cancelled) setCheck({ ok: problems.length === 0, problems, names, proofs, bytes, signer })
     })()
     return () => { cancelled = true }
-  }, [h, chainNonce, nonceFetched, rows, target])
+  }, [h, chainNonce, nonceFetched, rows, target, keyStatus])
 
   const handleRelay = async () => {
     try {

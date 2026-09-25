@@ -8,9 +8,9 @@
   --mono:    'Share Tech Mono', monospace;
 }
 
-/* ─── Theme: Thurin (brand — sage green + gold on dark) ──────────────────── */
+/* ─── Theme: Dark (the Thurin look — sage green + gold on dark) ─────────── */
 
-:root[data-theme="thurin"] {
+:root[data-theme="dark"] {
   --color-bg:              #1a1a12;
   --color-surface:         #252518;
   --color-surface-deep:    #151510;
@@ -39,37 +39,6 @@
   --color-vignette-b:      rgba(201, 162, 39, 0.02);
 }
 
-/* ─── Theme: Dark (warm heraldic gold + crimson) ─────────────────────────── */
-
-:root[data-theme="dark"] {
-  --color-bg:              #141010;
-  --color-surface:         #1e1918;
-  --color-surface-deep:    #110e0c;
-  --color-surface-active:  #1a1510;
-  --color-border:          #352a22;
-  --color-text:            #ede5d8;
-  --color-text-muted:      #a09080;
-  --color-heading:         #f0ece4;
-  --color-step-title:      #f0e8da;
-  --color-primary:         #c9a227;
-  --color-primary-dim:     #8a7020;
-  --color-primary-light:   #e0c050;
-  --color-primary-glow:    rgba(201, 162, 39, 0.12);
-  --color-secondary:       #d4a04a;
-  --color-accent:          #9b2335;
-  --color-accent-dim:      #6d1925;
-  --color-accent-glow:     rgba(155, 35, 53, 0.10);
-  --color-success:         #7c9a3e;
-  --color-error:           #d44a4a;
-  --color-info:            #d4a04a;
-  --color-btn-primary-text: #141010;
-  --color-success-bg:      rgba(124, 154, 62, 0.06);
-  --color-error-bg:        rgba(212, 74, 74, 0.06);
-  --color-info-bg:         rgba(212, 160, 74, 0.06);
-  --color-vignette-a:      rgba(155, 35, 53, 0.04);
-  --color-vignette-b:      rgba(201, 162, 39, 0.03);
-}
-
 /* ─── Theme: Light (brand light, sage green primary) ─────────────────────── */
 
 :root[data-theme="light"] {
@@ -87,9 +56,9 @@
   --color-primary-light:   #4a6020;
   --color-primary-glow:    rgba(124, 154, 62, 0.10);
   --color-secondary:       #a8861e;
-  --color-accent:          #9b2335;
-  --color-accent-dim:      #c04050;
-  --color-accent-glow:     rgba(155, 35, 53, 0.08);
+  --color-accent:          #a8861e;
+  --color-accent-dim:      #c9a227;
+  --color-accent-glow:     rgba(168, 134, 30, 0.08);
   --color-success:         #5a7228;
   --color-error:           #b83a3a;
   --color-info:            #a8861e;
@@ -151,29 +120,24 @@ body::before {
   border-bottom: 1px solid var(--color-border);
 }
 
-.theme-select {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   background: transparent;
   border: 1px solid var(--color-border);
   color: var(--color-text-muted);
-  padding: 4px 8px;
   cursor: pointer;
-  outline: none;
   transition: all 0.2s;
 }
 
-.theme-select:hover,
-.theme-select:focus {
+.theme-toggle:hover,
+.theme-toggle:focus-visible {
   border-color: var(--color-primary-dim);
   color: var(--color-primary);
-}
-
-.theme-select option {
-  background: var(--color-surface);
-  color: var(--color-text);
+  outline: none;
 }
 
 /* ─── Step cards ──────────────────────────────────────────────────────────── */
@@ -238,11 +202,13 @@ body::before {
   font-family: var(--mono);
   font-size: 10px;
   padding: 3px 10px;
-  border: 1px solid var(--color-primary-dim);
-  color: var(--color-primary);
+  border: 1px solid var(--color-success);
+  color: var(--color-success);
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
+.step-badge.muted { border-color: var(--color-text-muted); color: var(--color-text-muted); }
 
 /* ─── Buttons ─────────────────────────────────────────────────────────────── */
 
@@ -433,12 +399,13 @@ body::before {
   text-transform: uppercase;
   border: 1px solid;
   display: inline-block;
+  white-space: nowrap; /* a pill never breaks; a table too wide for the screen scrolls in its own box */
 }
 
 .status-badge.active {
-  border-color: var(--color-primary-dim);
-  color: var(--color-primary);
-  background: var(--color-primary-glow);
+  border-color: var(--color-success);
+  color: var(--color-success);
+  background: var(--color-success-bg);
 }
 
 .status-badge.revoked {
