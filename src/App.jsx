@@ -355,7 +355,7 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
               <div className="label">Identity Proofs</div>
               {!checking && thurinProofs.length > 0 && (
                 <button className="btn btn-small" onClick={() => setAsked(true)}>
-                  Check {thurinProofs.length} proof{thurinProofs.length === 1 ? '' : 's'}
+                  Check proofs
                 </button>
               )}
             </div>

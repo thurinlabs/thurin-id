@@ -51,11 +51,11 @@ Production builds leave `VITE_CHAIN` unset, so they stay on mainnet.
 
 The explorer reads attestations straight from the `PGPRegistry` contract — history, stored signature, and stored key, all plain `eth_call`s that any RPC serves — and parses the `proof@thurin.id` notations on the on-chain key. No keyserver is consulted. Verification lives in identity-kit and runs in the browser:
 
-- **GitHub** — fetches the gist via GitHub API, checks ownership and for `openpgp4fpr:FINGERPRINT`
+- **GitHub** — fetches the gist (or, for an organisation, the repository) via the GitHub API, checks the owner and for `openpgp4fpr:FINGERPRINT`
 - **DNS** — queries TXT records via Cloudflare DNS-over-HTTPS, checks for `openpgp4fpr:FINGERPRINT`
 - **Farcaster** — resolves the user's FID, scans recent casts on a public Farcaster node (Quilibrium's keyless Hypersnap node by default), checks for `openpgp4fpr:FINGERPRINT`
 - **Codeberg** — checks the repository's owner and its description
-- **Mastodon** — checks profile metadata
+- **Mastodon** — checks the profile's fields and bio on the server named in the proof
 
 ## Privacy
 
@@ -66,7 +66,7 @@ The explorer reads attestations straight from the `PGPRegistry` contract — his
 **Who your browser talks to** when it checks an identity, and so sees your IP and which identity you looked at:
 - an Ethereum node: the keyless `ethereum.publicnode.com` by default, or your own (footer → Change);
 - the platforms behind each proof (GitHub, Codeberg, Cloudflare DNS, the public Farcaster node, the named Mastodon server) and EFP;
-- for avatars, euc.li or an IPFS gateway, never a server the name's owner picked.
+- for avatars, euc.li, an IPFS gateway, or arweave.net, never a server the name's owner picked.
 
 Wallets connect only when you choose to. The full answer, including what isn't solved: [CROPS](https://docs.thurin.id/#/crops) · [privacy policy](https://thurinlabs.id/privacy/).
 
@@ -75,8 +75,8 @@ Wallets connect only when you choose to. The full answer, including what isn't s
 | Path | What |
 |------|------|
 | `/` | Explorer |
-| `/eth/<address>`, `/ens/<name>`, `/pgp/<fingerprint>` | Identity pages |
-| `/attest` | Create an on-chain identity claim |
+| `/eth/<address>`, `/ens/<name>`, `/pgp/<fingerprint>` | Identity pages (add `/claims` or `/records` for those tabs) |
+| `/attest` | Add your key: publish, update, replace, or revoke a claim |
 
 `/signet` (the old attestation route) is a 301 to `/attest`, served by nginx.
 
