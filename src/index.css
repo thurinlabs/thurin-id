@@ -1054,7 +1054,7 @@ a.proof-link:hover {
 
 .home-tagline {
   font-family: var(--heading);
-  font-size: 80px;
+  font-size: 54px;
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1.05;
@@ -1064,6 +1064,7 @@ a.proof-link:hover {
 }
 
 .home-tagline-2 {
+  font-size: 44px;   /* the second line is the smaller one */
   color: var(--color-text);
   animation-delay: 0.3s;
 }
@@ -1320,7 +1321,8 @@ a.proof-link:hover {
 
 @media (max-width: 600px) {
   .home-hero { padding: 36px 0 24px; }
-  .home-tagline { font-size: 44px; }
+  .home-tagline { font-size: 32px; }
+  .home-tagline-2 { font-size: 26px; }
   .home-lede { font-size: 17px; margin-top: 14px; }
   .search-section-home { margin-bottom: 40px; }
   .lookup-preview { padding: 14px 16px 16px; }

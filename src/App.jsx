@@ -1293,12 +1293,10 @@ function Explorer() {
     <>
       {!submitted && (
         <section className="home-hero">
-          <h1 className="home-tagline">Prove more.</h1>
-          <h1 className="home-tagline home-tagline-2">Reveal less.</h1>
+          <h1 className="home-tagline">PGP keys on Ethereum</h1>
+          <h1 className="home-tagline home-tagline-2">Old trust – new ground</h1>
           <p className="home-lede">
-            Prove an online identity is really yours. Your PGP key, bound to your Ethereum
-            address on-chain. Anyone can check it, no company holds it, and nothing about
-            you goes public unless you choose.
+            Look up anyone's key, or add yours. Anyone can check it, and none of it depends on us.
           </p>
         </section>
       )}
@@ -1499,7 +1497,7 @@ export default function App() {
   const links = useMemo(() => siteLinks(), [])
 
   useEffect(() => {
-    document.title = isAttest ? 'Thurin.id — Attest' : 'Thurin.id — Prove more. Reveal less.'
+    document.title = isAttest ? 'Thurin.id: add your key' : 'Thurin.id: PGP keys on Ethereum'
   }, [isAttest])
 
   return (
