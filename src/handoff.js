@@ -11,7 +11,7 @@
 // functions and pay the fee. The typed data is rebuilt from the other fields, never
 // carried, so what the page shows is what was signed.
 
-const OPS = ['attest', 'reattest', 'update-key', 'revoke', 'set-record']
+const OPS = ['attest', 'reattest', 'update-key', 'revoke', 'set-record', 'mark-compromised']
 const REASONS = ['', 'compromised', 'retired', 'other']   // what an owner can give to revoke; "superseded" comes only from reattest
 const HEX = /^0x([0-9a-f]{2})+$/i
 const KEY_TAGS = ['98', '99', '9a', 'c6']          // public-key packet, old- or new-style header
@@ -56,7 +56,7 @@ export function readHandoff() {
   if (!OPS.includes(h.op)) throw new Error(`Unknown hand-off operation "${h.op}".`)
   if (!/^0x[0-9a-f]{40}$/.test(h.owner || '')) throw new Error('The hand-off has no valid owner address.')
   if (!/^[0-9A-F]{40}$/.test(h.fingerprint || '')) throw new Error('The hand-off has no valid fingerprint.')
-  const needsKey = h.op !== 'revoke' && h.op !== 'set-record', needsSig = h.op === 'attest' || h.op === 'reattest'
+  const needsKey = h.op === 'attest' || h.op === 'reattest' || h.op === 'update-key', needsSig = h.op === 'attest' || h.op === 'reattest'
   if (h.op === 'set-record' && (typeof h.kind !== 'string' || typeof h.value !== 'string')) throw new Error('The hand-off names no record.')
   if (needsKey && !isKeyHex(h.key)) throw new Error('The hand-off carries no public key.')
   if (needsSig && !isSignature(h.signature)) throw new Error('The hand-off carries no signature.')
@@ -71,7 +71,7 @@ export function readHandoff() {
     if (!/^0x[0-9a-f]{130}$/i.test(a.signature || '')) throw new Error('The authorization has no valid signature.')
     authorization = { nonce: a.nonce, deadline: a.deadline, signature: a.signature }
   }
-  if (h.op === 'revoke' && !authorization) throw new Error('A revoke hand-off needs an authorization; revoke your own claim under Your claims.')
+  if ((h.op === 'revoke' || h.op === 'mark-compromised') && !authorization) throw new Error('A revoke hand-off needs an authorization; revoke your own claim under Your claims.')
   return {
     op: h.op, network: String(h.network || 'mainnet'), owner: h.owner, fingerprint: h.fingerprint,
     key: h.key ?? null, signature: h.signature ?? null, index: h.index ?? null, includeEmail: !!h.includeEmail,

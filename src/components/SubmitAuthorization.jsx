@@ -3,7 +3,7 @@ import { useWriteContract, useReadContract } from 'wagmi'
 import { createPublicClient, http, stringToHex, recoverTypedDataAddress } from 'viem'
 import {
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
-  attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData,
+  attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, markCompromisedTypedData,
 } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 
@@ -16,8 +16,8 @@ import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK }
 // viewer's own wallet is always the other path.
 const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || ''
 
-const VERBS = { attest: 'Publish a claim', reattest: 'Replace a claim', 'update-key': 'Update a key', revoke: 'Revoke a claim', 'set-record': 'Set a record' }
-const FNS = { attest: 'attestFor', reattest: 'reattestFor', 'update-key': 'updateKeyFor', revoke: 'revokeFor', 'set-record': 'setRecordFor' }
+const VERBS = { attest: 'Publish a claim', reattest: 'Replace a claim', 'update-key': 'Update a key', revoke: 'Revoke a claim', 'set-record': 'Set a record', 'mark-compromised': 'Mark a key compromised' }
+const FNS = { attest: 'attestFor', reattest: 'reattestFor', 'update-key': 'updateKeyFor', revoke: 'revokeFor', 'set-record': 'setRecordFor', 'mark-compromised': 'markCompromisedFor' }
 
 function shortAddr(a) { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '' }
 function prettyRecord(kind, value) {
@@ -43,6 +43,7 @@ function typedDataFor(h) {
     case 'update-key': return updateKeyTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), key: h.key })
     case 'revoke': return revokeTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), reason: h.reason ?? '' })
     case 'set-record': return setRecordTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), kind: h.kind, value: h.value ?? '' })
+    case 'mark-compromised': return markCompromisedTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index) })
     default: throw new Error(`Unknown operation ${h.op}`)
   }
 }
@@ -60,6 +61,7 @@ function argsFor(h) {
     case 'update-key': return [h.owner, BigInt(h.index), payloadArg(h.key), d, signature]
     case 'revoke': return [h.owner, BigInt(h.index), h.reason ?? '', d, signature]
     case 'set-record': return [h.owner, BigInt(h.index), h.kind, h.value ?? '', d, signature]
+    case 'mark-compromised': return [h.owner, BigInt(h.index), d, signature]
     default: throw new Error(`Unknown operation ${h.op}`)
   }
 }
@@ -118,7 +120,12 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
         }
       }
       if (h.index !== null && rows && !rows[h.index]) problems.push(`${shortAddr(h.owner)} has no claim #${h.index}.`)
-      if (target?.revokedAt && Number(target.revokedAt) > 0) problems.push(`Claim #${h.index} is already revoked.`)
+      const revoked = target?.revokedAt && Number(target.revokedAt) > 0
+      if (h.op === 'mark-compromised') {
+        if (target && !revoked) problems.push(`Claim #${h.index} is still active; it has to be revoked first.`)
+        if (target?.revokeReason === 'compromised') problems.push(`Claim #${h.index} is already marked compromised.`)
+        if (target && keyStatus === 'active') problems.push(`${shortAddr(h.owner)} still has an active claim on this key; revoke that one as compromised first.`)
+      } else if (revoked) problems.push(`Claim #${h.index} is already revoked.`)
       if (!cancelled) setCheck({ ok: problems.length === 0, problems, names, proofs, bytes, signer })
     })()
     return () => { cancelled = true }
@@ -181,8 +188,8 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
           <div className="mono-box" style={{ marginBottom: 12 }}>
             <div className="label">What will be published</div>
             <div className="value">Owner: {h.owner}</div>
-            {h.fingerprint && h.op !== 'revoke' && <div className="value">Key: {h.fingerprint}</div>}
-            {h.index !== null && <div className="value">{h.op === 'reattest' ? 'Replaces' : h.op === 'revoke' ? 'Revokes' : h.op === 'set-record' ? 'On' : 'Updates'} claim #{h.index}{targetFpr ? ` (${targetFpr.slice(0, 8)}…${targetFpr.slice(-8)})` : ''}</div>}
+            {h.fingerprint && h.op !== 'revoke' && h.op !== 'mark-compromised' && <div className="value">Key: {h.fingerprint}</div>}
+            {h.index !== null && <div className="value">{h.op === 'reattest' ? 'Replaces' : h.op === 'revoke' ? 'Revokes' : h.op === 'set-record' ? 'On' : h.op === 'mark-compromised' ? 'Marks the key compromised on' : 'Updates'} claim #{h.index}{targetFpr ? ` (${targetFpr.slice(0, 8)}…${targetFpr.slice(-8)})` : ''}</div>}
             {h.op === 'set-record' && (
               <>
                 <div className="value">Record: {h.kind}</div>
