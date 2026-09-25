@@ -8,13 +8,12 @@ import { KIND_LABEL } from '../recordLabels'
 // its own way, then anyone else's (reverse-dot names) as plain text, in the order they were set.
 // Visitors read; the claim's owner, connected, can set, edit, and clear the plain Thurin kinds and
 // clear any other (the encrypted kinds stay CLI-only until the browser can encrypt; the release
-// list is kept by `thurin record add-release`, which hashes the checksum file). Reads and
-// writes use the app's own wagmi (the kit is a sibling link with a second wagmi copy); the kit
-// supplies the kinds, order, and parsers.
+// list is kept by `thurin record add-release`, which hashes the checksum file). The kit supplies
+// the kinds, order, and parsers.
 
 const DOCS = 'https://docs.thurin.id/#/records'
-// What the owner can write from the page. private/disclosure are read-only kinds: writing
-// them is punted (on-chain history is forever; see the vault's Encrypt note).
+// What the owner can write from the page. private and disclosure stay read-only here: they're
+// encrypted, and on-chain history is forever.
 const EDITABLE = ['thurin.railgun', 'thurin.security', 'thurin.successor', 'thurin.affiliation', 'thurin.canary']
 const HINT = {
   'thurin.railgun': 'Your Railgun 0zk address, so people can pay you privately by name.',

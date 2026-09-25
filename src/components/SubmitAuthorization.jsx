@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { forgetHandoff } from '../handoff'
 import { useWriteContract, useReadContract } from 'wagmi'
 import { createPublicClient, http, stringToHex, recoverTypedDataAddress } from 'viem'
-import {
+import { sameFingerprint,
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
   attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, markCompromisedTypedData,
 } from '@thurinlabs/identity-kit'
@@ -123,7 +123,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
         const info = await parsePgpKey(h.key)
         if (!info) problems.push("The key in this link can't be read. Ask for a new link.")
         else {
-          if (info.fingerprint.toUpperCase() !== h.fingerprint) problems.push('The key in this link is not the key it names.')
+          if (!sameFingerprint(info.fingerprint, h.fingerprint)) problems.push('The key in this link is not the key it names.')
           names = info.userIDs; proofs = info.notations.filter(n => identifyProof(n)).length
           bytes = onChainBytes(h.key) + (h.signature ? onChainBytes(h.signature) : 0)
         }

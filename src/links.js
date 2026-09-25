@@ -1,10 +1,7 @@
 /**
- * Thurin's own URLs, chosen by the host this copy of the app is served from.
- *
- * On thurin.id the links go to the .id sites. Served from ENS (id.thurinlabs.eth
- * natively, or through a gateway like id.thurinlabs.eth.limo) they stay on ENS,
- * using the same gateway suffix, so a visitor who came in without touching DNS
- * never gets handed back to it. Docs have no ENS name yet and stay on docs.thurin.id.
+ * Thurin's own URLs for the host this copy is served from: the .id sites on thurin.id; on ENS
+ * (id.thurinlabs.eth, or a gateway like .eth.limo) the same suffix, so a visitor who came in
+ * without DNS is never handed back to it. Docs have no ENS name and stay on docs.thurin.id.
  */
 export function siteLinks(hostname = window.location.hostname) {
   const h = hostname.toLowerCase()

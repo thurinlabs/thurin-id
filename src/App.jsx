@@ -6,7 +6,7 @@ import { useSafeAvatar, AvatarImg } from './avatar'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { normalize } from 'viem/ens'
 import { REGISTRY_ADDRESS, NETWORK, CHAIN, EXPLORER_URL, typedNameClient, readClient } from './wagmiConfig'
-import { keyIdToBytes, normalizeFingerprint, readClaims, findOwners, CLAIM_LIMIT } from '@thurinlabs/identity-kit'
+import { keyIdToBytes, normalizeFingerprint, sameFingerprint, readClaims, findOwners, CLAIM_LIMIT } from '@thurinlabs/identity-kit'
 import {
   identifyProof,
   verifyProof,
@@ -71,10 +71,9 @@ function copyToClipboard(text, e) {
 
 // ─── Path routing ───────────────────────────────────────────────────────────
 
-// Path routes (/eth/…, /attest) only work where the host serves index.html for
-// unknown paths: thurin.id (nginx @fallback), *.eth.limo (honours the IPFS
-// `_redirects` file shipped in public/), and the Vite dev/preview servers.
-// Anywhere else — e.g. a raw /ipfs/<cid>/ path gateway — fall back to #/ routes.
+// Path routes (/eth/…, /attest) need a host that serves index.html for unknown paths: thurin.id
+// (nginx), *.eth.limo (the `_redirects` file in public/), and Vite. Anywhere else, such as a raw
+// /ipfs/<cid>/ gateway, routes fall back to #/.
 export function usesPathRouting() {
   const h = window.location.hostname
   return h === 'thurin.id' || h.endsWith('.eth.limo') || h === 'localhost' || h === '127.0.0.1'
@@ -113,7 +112,7 @@ function cardHost() {
 }
 
 function parseRoute() {
-  // Legacy hash routes: rewrite to a path where path routing works, else parse the hash directly
+  // A #/eth/… route: moved to its path where paths work, else read as it is
   const hash = window.location.hash.replace(/^#\/?/, '')
   if (hash) {
     const slash = hash.indexOf('/')
@@ -125,7 +124,7 @@ function parseRoute() {
         if (usesPathRouting()) {
           window.history.replaceState(null, '', `/${prefix}/${encodeURIComponent(id)}${tab === 'overview' ? '' : `/${tab}`}`)
         } else {
-          // Path gateway — parse the hash route directly
+          // A path gateway: read the hash route
           return { type: prefix === 'eth' ? 'address' : prefix === 'pgp' ? (/^[0-9a-fA-F]{16}$/i.test(id) ? 'keyId' : 'fingerprint') : 'ens', value: id, tab }
         }
       }
@@ -167,7 +166,7 @@ function pushRoute(type, value, tab = 'overview') {
       window.history.pushState(null, '', newPath)
     }
   } else {
-    // Path gateway — use hash routing
+    // A path gateway: hash routes
     const newHash = `#/${prefix}/${encodeURIComponent(value)}${suffix}`
     if (window.location.hash !== newHash) {
       window.location.hash = newHash
@@ -247,9 +246,8 @@ function Topbar({ isAttest }) {
             Add key
           </a>
         )}
-        {/* One wallet switch for the whole site. Visitors never need it; connected, it only
-            unlocks things on your own pages (set records, the ENS record). No backend learns
-            anything: the browser is the only party that knows who you are. */}
+        {/* One wallet switch for the whole site, needed only on your own pages (records, the ENS
+            record). Only the browser knows who you are. */}
         <div className="topbar-connect">
           <ConnectButton.Custom>
             {({ account, chain, mounted, openConnectModal, openChainModal, openAccountModal }) => {
@@ -278,9 +276,8 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
   const [asked, setAsked] = useState(false)
   const checking = asked || alwaysCheck
 
-  // The on-chain key is the source of truth for the published identity and its
-  // proofs. No keyserver: keys.openpgp.org only serves email-verified user IDs
-  // and drops non-email ones, so it can't carry the published identity.
+  // The on-chain key is the published identity. No keyserver: keys.openpgp.org drops user IDs
+  // without an email, so it can't carry the name proofs sit on.
   useEffect(() => {
     if (!armoredKey) return
     let cancelled = false
@@ -299,7 +296,6 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
 
     if (proofs.length === 0) return
 
-    // Set all to pending
     const pending = {}
     for (const p of proofs) pending[p.index] = { status: 'pending' }
     setProofResults(pending)
@@ -568,10 +564,8 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
         )}
       </div>
 
-      {/* The identity panel only renders for a verified, non-revoked claim. A
-          claim's stored public key is not authoritative until its signature
-          verifies and binds the key to this address, so unverified or revoked
-          key data is never used to display an identity. */}
+      {/* Only a verified, active claim shows an identity: a stored key isn't the owner's until
+          its signature binds it to this address. */}
       {latest && latest.pgpPublicKey && latest.verification?.verified && !latest.revoked ? (
         <PgpKeyInfo armoredKey={latest.pgpPublicKey} show="proofs" />
       ) : latest && latest.pgpPublicKey && latest.verification === null ? (
@@ -718,7 +712,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
       const matching = []
       for (const { owner } of await findOwners(readClient, { fingerprint: fp }, { registry: REGISTRY_ADDRESS })) {
         for (const c of await readClaims(readClient, owner, { registry: REGISTRY_ADDRESS })) {
-          if (c.fingerprint === fp) matching.push({ ...c, address: owner })
+          if (sameFingerprint(c.fingerprint, fp)) matching.push({ ...c, address: owner })
         }
       }
       return matching
@@ -727,10 +721,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
   })
   const claims = data ?? NO_CLAIMS
 
-  // Only a verified, non-revoked claim may drive the identity panel — there is
-  // deliberately no fallback to unverified claims, since a claim's stored key
-  // is not authoritative until its signature verifies and binds it to the
-  // address.
+  // Only a verified, active claim drives the identity panel; there is no unverified fallback.
   const bestClaim = useMemo(() => claims.find(c => !c.revoked && c.verification?.verified) ?? null, [claims])
 
   if (isLoading) {
@@ -964,7 +955,6 @@ function Explorer() {
     setSubmitted({ ...submitted, tab })
   }
 
-  // Derive ENS name for display
   const displayEns = submitted?.type === 'ens' ? submitted.value
     : submitted?.type === 'address' ? reverseEns
     : null

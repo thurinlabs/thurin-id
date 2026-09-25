@@ -1,7 +1,6 @@
-// When a read fails, say whose fault it is. "No address found" or zero claims must never be
-// shown when the truth is that the RPC didn't answer: that reads as a fact about the identity.
-// So on any failed read (or an empty ENS result) ask the RPC one cheap question; if that fails
-// too, the RPC is down and nothing about the identity is known.
+// When a read fails, say whose fault it is: "no address" or zero claims reads as a fact about the
+// identity. So after a failed read (or an empty ENS result) ask the RPC one cheap question; if
+// that fails too, the RPC is down and nothing about the identity is known.
 import { useEffect, useState } from 'react'
 import { createPublicClient, http } from 'viem'
 import { CHAIN, RPC_URL, CUSTOM_RPC_URL, RPC_STORAGE_KEY, rpcProviderName } from '../wagmiConfig'

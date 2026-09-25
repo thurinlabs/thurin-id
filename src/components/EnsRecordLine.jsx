@@ -7,11 +7,8 @@ import { CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 // One line under the current fingerprint: does the ENS name's `id.thurin` record point at
 // this key? The record is a discovery hint for ENS viewers; the claim is the proof. When
 // the connected wallet may write the name's resolver, the line grows a one-transaction
-// "Set it". Who may write is decided by simulating setText, not by guessing ownership —
-// that works for wrapped names, subnames, and ENSv2's per-account resolvers alike.
-//
-// The record is read with the app's own wagmi hook, not the kit's useEnsHint: the kit is
-// linked from a sibling checkout, so its wagmi is a second copy with its own context.
+// "Set it". Who may write is found by simulating setText, not by guessing ownership: that works
+// for wrapped names, subnames, and ENSv2's per-account resolvers alike.
 
 const DOCS = 'https://docs.thurin.id/#/guides/ens-record'
 

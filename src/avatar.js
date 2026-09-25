@@ -1,6 +1,5 @@
-// ENS avatars without the tracking pixel. The rule (what may load) lives in the kit's
-// core/avatar.ts, shared with the share-card service; this is only the app-side hook, since
-// the kit's own React hooks can't run here (the sibling link makes a second copy of wagmi).
+// ENS avatars without the tracking pixel. What may load is the kit's rule (core/avatar.ts), shared
+// with the share-card service; this is the app's hook around it.
 import { createElement, useEffect, useState } from 'react'
 import { useEnsText, useReadContract } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'

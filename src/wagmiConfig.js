@@ -56,15 +56,13 @@ export function rpcProviderName(url) {
   } catch { return url }
 }
 
-// One chain per build. Offering a second one (tried for phone wallets without testnets)
-// let the app sit on the wrong network without complaint; with a single chain RainbowKit
-// shows "Wrong network" and offers the switch, and every write is pinned to CHAIN.id.
+// One chain per build: RainbowKit then shows "Wrong network" and offers the switch, and every
+// write is pinned to CHAIN.id.
 //
-// The wallet list is RainbowKit's default minus `walletConnectWallet`. That one entry runs
-// WalletConnect's own modal (Reown AppKit), which starts at page load and posts an analytics
-// event with the full page URL (i.e. which identity is being viewed) to pulse.walletconnect.org,
-// with no switch to turn it off. Every wallet below uses RainbowKit's own QR code instead;
-// browser-extension wallets still show up on their own (EIP-6963).
+// The wallet list is RainbowKit's default minus `walletConnectWallet`: its modal (Reown AppKit)
+// starts at page load and posts the full page URL, so which identity is viewed, to
+// pulse.walletconnect.org, with no off switch. The wallets below use RainbowKit's own QR code;
+// extension wallets appear on their own (EIP-6963).
 export const config = getDefaultConfig({
   appName: 'Thurin',
   projectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID,

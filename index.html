@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Proof checks, the Ethereum node, and EFP are told nothing about the page that asked. -->
+    <!-- Proof checks, the Ethereum node, and outbound links are told nothing about the page that asked. -->
     <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -24,7 +24,7 @@
     <meta name="twitter:description" content="Look up anyone's PGP key, or put yours on your Ethereum address. Anyone can check it, and none of it depends on us." />
     <meta name="twitter:image" content="https://thurin.id/og-image.png" />
     <script>
-      // Two modes: light, or dark. Any other saved value (older choices included) lands on dark.
+      // Two modes: a saved "light", else dark.
       var theme = null;
       try { theme = localStorage.getItem('thurin-theme'); } catch (e) {}
       document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';

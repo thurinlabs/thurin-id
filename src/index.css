@@ -2,7 +2,7 @@
 
 /* ─── Fonts (shared across themes) ───────────────────────────────────────── */
 
-/* ─── Theme: Dark (the Thurin look — sage green + gold on dark) ─────────── */
+/* ─── Theme: Dark (sage green and gold on dark) ─────────────────────────── */
 
 :root[data-theme="dark"] {
   --color-bg:              #1a1a12;
@@ -58,8 +58,6 @@
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
 
-/* subtle vignette (dark themes only) */
-
 .app {
   max-width: 1200px;
   margin: 0 auto;
@@ -69,8 +67,7 @@
 /* ─── Topbar ──────────────────────────────────────────────────────────────── */
 
 .topbar-title {
-  /* Same treatment as the ThurinLabs.id wordmark on the company site: body serif,
-     bold, tight tracking, text colour; the ".id" accent is lighter and primary-coloured. */
+  /* As the ThurinLabs.id wordmark: body serif, bold, tight; the ".id" lighter, in the primary colour. */
   font-family: var(--body);
   font-size: 26px;
   font-weight: 700;
@@ -83,8 +80,6 @@
   flex-shrink: 0;
 }
 
-/* Wordmark: "Thurin.id" — same treatment as ThurinLabs.id on the company site
-   (bold base, lighter accent-coloured ".id"). */
 .topbar-wordmark {
   line-height: 1;
 }
@@ -227,10 +222,6 @@
   outline: none;
   transition: border-color 0.2s;
 }
-
-/* ─── Status messages ─────────────────────────────────────────────────────── */
-
-/* ─── Helper text ─────────────────────────────────────────────────────────── */
 
 /* ─── Explorer ─────────────────────────────────────────────────────────────── */
 
@@ -587,8 +578,6 @@ a.proof-link:hover {
   border-color: var(--color-primary);
   color: var(--color-primary);
 }
-
-/* ─── Footer ──────────────────────────────────────────────────────────────── */
 
 /* ─── Mobile ──────────────────────────────────────────────────────────────── */
 

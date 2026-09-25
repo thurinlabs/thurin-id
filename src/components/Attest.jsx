@@ -6,7 +6,7 @@ import * as openpgp from 'openpgp'
 import { createPublicClient, http, toHex, encodeFunctionData } from 'viem'
 import { asArmor } from '../payload'
 import { kindLabel } from '../recordLabels'
-import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, verifyAttestation, readClaims, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
+import { hasEmailUserID, sameFingerprint, parsePgpKey, identifyProof, fingerprintToBytes, verifyAttestation, readClaims, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK, readClient } from '../wagmiConfig'
 import { readHandoff, forgetHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
@@ -58,9 +58,7 @@ function gpgPayload(address) {
   return `I control the Ethereum address: ${address.toLowerCase()}`
 }
 
-// Must match PGPRegistry.MAX_KEY_BYTES (16 KB). The on-chain key only needs to
-// verify the attestation signature and carry the proof notations, so a minimal
-// export stays well under this — and every byte costs gas.
+// PGPRegistry.MAX_KEY_BYTES (16 KB). A minimal export stays well under it, and every byte costs gas.
 const MAX_PUBKEY_BYTES = 16384
 
 // One command: sign the line, then print the same key's public half. Without a chosen key it
@@ -106,12 +104,11 @@ function StepConnect({ active, done }) {
   )
 }
 
-// ─── Step 2: Sign — one command, one paste ───────────────────────────────────
+// ─── Step 2: Sign ────────────────────────────────────────────────────────────
 //
-// The paste carries the clearsigned line and the exported key. The page finds the key that
-// made the signature, checks it exactly as a lookup will, and shows what goes on-chain: every
-// email user ID removed unless "Include my email" is ticked. The keyserver is never consulted:
-// keys.openpgp.org drops non-email user IDs, so it can't supply the name the proofs sit on.
+// One paste: the signature and the exported key. The page finds the key that signed, checks it
+// as a lookup will, and shows what goes on-chain (emails out unless ticked). No keyserver:
+// keys.openpgp.org drops user IDs without an email, so it can't supply the name proofs sit on.
 
 function StepSign({ active, done, locked, address, expectedFingerprint, includeEmail, setIncludeEmail, onVerified, paste, setPaste, fromLink = false }) {
   const [keyChoiceText, setKeyChoiceText] = useState('')
@@ -170,7 +167,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
           ? `the key that signed is in the paste, but its signature doesn't verify (${ownKeyReason}). If \`echo test | gpg --clearsign | gpg --verify\` says BAD too, it's your gpg setup, not this page. Otherwise check the line wasn't changed: it has to be "${gpgPayload(address)}".`
           : `the signature doesn't match the key in the paste. Run the whole command again and paste all of its output.`)
         const fingerprint = publicKey.getFingerprint().toUpperCase()
-        if (wantedFingerprint && fingerprint !== wantedFingerprint) {
+        if (wantedFingerprint && !sameFingerprint(fingerprint, wantedFingerprint)) {
           throw new Error(`this was signed by ${spacedFingerprint(fingerprint)}, not ${spacedFingerprint(wantedFingerprint)}.`)
         }
         const expirationTime = await publicKey.getExpirationTime()
@@ -421,7 +418,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
   )
 }
 
-// ─── Step 4: Generate Identity Claim ─────────────────────────────────────────
+// ─── Step 3: Publish ─────────────────────────────────────────────────────────
 
 function StepAttest({ active, done, attestation, onPublish, activeClaims = [], replaceIndex, setReplaceIndex }) {
   const [publishStatus, setPublishStatus] = useState(null)
@@ -444,12 +441,12 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
     chainId: CHAIN.id, query: { enabled: !!attestation?.ethAddress && !!attestation?.gpgFingerprint },
   })
   const keyCompromised = keyStatus === 'compromised'
-  const [oldCompromised, setOldCompromised] = useState(false)
+  const [oldCompromised, setOldCompromised] = useState(false)   // replacing a stolen key: mark it compromised in the same transaction
   // The names going on-chain, and any email among them (only there when the email box is ticked).
   const publishedNames = attestation?.gpgMeta?.userIDs ?? []
-  const publishedEmails = publishedNames.map(u => u.match(/<([^<>\s]+@[^<>\s]+)>/)?.[1]).filter(Boolean)   // replacing a stolen key: lock it in the same transaction
+  const publishedEmails = publishedNames.map(u => u.match(/<([^<>\s]+@[^<>\s]+)>/)?.[1]).filter(Boolean)
   const replacedFp = replacing ? activeClaims.find(c => c.index === replaceIndex)?.fingerprint : null
-  const newKey = !!replacedFp && !!attestation && replacedFp !== attestation.gpgFingerprint?.toLowerCase()
+  const newKey = !!replacedFp && !!attestation && !sameFingerprint(replacedFp, attestation.gpgFingerprint)
 
   if (!active && !done) return (
     <div className={`step`}>
@@ -594,7 +591,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
                   {newKey && moving.includes('thurin.canary') && ' Your canary was signed by the old key. After publishing, edit it and sign it again with the new key.'}
                 </div>
               )}
-              {activeClaims.some(c => c.fingerprint === attestation.gpgFingerprint.toLowerCase()) && (replaceIndex === null || replaceIndex === undefined) && (
+              {activeClaims.some(c => sameFingerprint(c.fingerprint, attestation.gpgFingerprint)) && (replaceIndex === null || replaceIndex === undefined) && (
                 <div className="status err" style={{ marginTop: 8 }}>
                   This key already has an active claim. Pick it above to replace it: one active claim per key.
                 </div>
@@ -631,7 +628,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
   )
 }
 
-// ─── Your Identity Claims (with Revoke) ──────────────────────────────────────
+// ─── Your claims ─────────────────────────────────────────────────────────────
 
 function formatDate(ts) {
   if (!ts) return '—'
@@ -673,7 +670,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
       const info = await parsePgpKey(text)
       if (cancelled) return
       if (!info) { setStatus({ type: 'err', msg: "That isn't a PGP public key. Paste the whole output of the command above." }); return }
-      if (info.fingerprint.toLowerCase() !== claim.fingerprint) {
+      if (!sameFingerprint(info.fingerprint, claim.fingerprint)) {
         setStatus({ type: 'err', msg: `That key's fingerprint (${info.fingerprint}) is not this claim's key.` })
         return
       }
@@ -880,7 +877,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
             </tr>
           </thead>
           <tbody>
-            {/* Active first, then revoked; newest first within each — same order as the identity page. */}
+            {/* Active first, then revoked; newest first within each, as on the identity page. */}
             {[...attestations].sort((a, b) => (a.revoked === b.revoked ? b.index - a.index : a.revoked ? 1 : -1)).map(a => (
               <Fragment key={a.index}>
               <tr>
@@ -916,8 +913,8 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                       <button
                         className="btn btn-sm"
                         onClick={() => setConfirmRevoke(confirmRevoke === a.index ? null : a.index)}
-                        disabled={revokeStatus[a.index]?.type === 'info' || attestations.some(o => !o.revoked && o.fingerprint === a.fingerprint)}
-                        title={attestations.some(o => !o.revoked && o.fingerprint === a.fingerprint) ? 'This key has an active claim here; revoke that one as compromised' : 'For a key you later find was stolen'}
+                        disabled={revokeStatus[a.index]?.type === 'info' || attestations.some(o => !o.revoked && sameFingerprint(o.fingerprint, a.fingerprint))}
+                        title={attestations.some(o => !o.revoked && sameFingerprint(o.fingerprint, a.fingerprint)) ? 'This key has an active claim here; revoke that one as compromised' : 'For a key you later find was stolen'}
                       >
                         {revokeStatus[a.index]?.type === 'info' ? 'Marking…' : 'Mark compromised'}
                       </button>
@@ -1040,11 +1037,10 @@ export default function Attest() {
   // Default to replacing the active claim for the same key (the registry allows one per key).
   useEffect(() => {
     if (!pgpData?.fingerprint) return
-    const same = activeClaims.find(c => c.fingerprint === pgpData.fingerprint.toLowerCase())
+    const same = activeClaims.find(c => sameFingerprint(c.fingerprint, pgpData.fingerprint))
     setReplaceIndex(linkClaim?.op === 'reattest' ? linkClaim.index : same ? same.index : null)
   }, [pgpData?.fingerprint, activeClaims, linkClaim])
 
-  // Derive active step
   const step = !isConnected ? 1
     : !pgpData ? 2
     : 3
