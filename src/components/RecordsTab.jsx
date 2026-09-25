@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useReadContracts, useWriteContract, usePublicClient } from 'wagmi'
-import { IDENTITY_KINDS, recordKind, decodeRecord, parseRecord, encodeRecord } from '@thurinlabs/identity-kit'
+import { useReadContract, useWriteContract, usePublicClient } from 'wagmi'
+import { IDENTITY_KINDS, pickRecords, parseRecord, checkRecordValue } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, EXPLORER_URL } from '../wagmiConfig'
 
 // Records on the claim this page speaks for: the kinds Thurin knows, read in one multicall
@@ -131,9 +131,9 @@ function RecordForm({ index, armoredKey, existing, initialKind, initialValue, on
 
   const send = async () => {
     try {
-      const hex = encodeRecord(value)
+      checkRecordValue(value)
       setStatus({ type: 'info', msg: 'Sending transaction…' })
-      const hash = await writeContractAsync({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'setRecord', args: [BigInt(index), recordKind(kind), hex], chainId: CHAIN.id })
+      const hash = await writeContractAsync({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'setRecord', args: [BigInt(index), kind, value], chainId: CHAIN.id })
       setStatus({ type: 'info', msg: `Waiting for confirmation… tx ${hash.slice(0, 10)}…` })
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
       if (receipt.status === 'success') { setStatus({ type: 'ok', msg: '✓ Record set.', hash }); onDone() }
@@ -181,7 +181,7 @@ function ClearButton({ index, kind, onDone }) {
   const clear = async () => {
     try {
       setBusy(true); setErr(null)
-      const hash = await writeContractAsync({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'setRecord', args: [BigInt(index), recordKind(kind), '0x'], chainId: CHAIN.id })
+      const hash = await writeContractAsync({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'setRecord', args: [BigInt(index), kind, ''], chainId: CHAIN.id })
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
       if (receipt.status !== 'success') throw new Error(`Transaction reverted: ${hash}`)
       onDone()
@@ -199,10 +199,9 @@ function ClearButton({ index, kind, onDone }) {
 
 export default function RecordsTab({ owner, index, armoredKey, canEdit = false }) {
   const enabled = !!owner && index !== null && index !== undefined
-  const { data: raw, isLoading, refetch } = useReadContracts({
-    contracts: enabled ? IDENTITY_KINDS.map(kind => ({
-      address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'record', args: [owner, BigInt(index), recordKind(kind)], chainId: CHAIN.id,
-    })) : [],
+  const { data: raw, isLoading, refetch } = useReadContract({
+    address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'recordsOf',
+    args: enabled ? [owner, BigInt(index)] : undefined, chainId: CHAIN.id,
     query: { enabled },
   })
   const [records, setRecords] = useState(null)
@@ -213,11 +212,7 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
     let live = true
     ;(async () => {
       const out = []
-      for (let i = 0; i < IDENTITY_KINDS.length; i++) {
-        const r = raw[i]
-        const text = r?.status === 'success' ? decodeRecord(r.result) : ''
-        if (text) out.push(await parseRecord(IDENTITY_KINDS[i], text, { armoredKey: armoredKey || undefined }))
-      }
+      for (const r of pickRecords(raw[0], raw[1], IDENTITY_KINDS)) out.push(await parseRecord(r.kind, r.text, { armoredKey: armoredKey || undefined }))
       if (live) setRecords(out)
     })()
     return () => { live = false }

@@ -48,17 +48,18 @@ export default function Authorize({ address, op, fields, onPublished }) {
       const owner = address.toLowerCase()
       const common = { owner: address, nonce: n, deadline }
       const typed = op === 'attest'
-        ? attestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, fingerprint: fields.fingerprint, pgpSignature: fields.signature, pgpPublicKey: fields.key })
+        ? attestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, fingerprint: fields.fingerprint, signature: fields.signature, key: fields.key })
         : op === 'reattest'
-          ? reattestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, revokeIndex: BigInt(fields.index), fingerprint: fields.fingerprint, pgpSignature: fields.signature, pgpPublicKey: fields.key })
-          : updateKeyTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(fields.index), pgpPublicKey: fields.key })
+          ? reattestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, revokeIndex: BigInt(fields.index), fingerprint: fields.fingerprint, signature: fields.signature, key: fields.key, keepRecords: true })
+          : updateKeyTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(fields.index), key: fields.key })
       const signature = await signTypedDataAsync(typed)
       // Prove it back before showing it: a wallet that signs something else must not produce a link.
       const signer = await recoverTypedDataAddress({ ...typed, signature })
       if (signer.toLowerCase() !== owner) { setStatus({ type: 'err', msg: 'The wallet signed with a different address than the one connected. Nothing was published.' }); return }
       const h = {
-        v: 1, op, network: NETWORK, owner, fingerprint: fields.fingerprint.toUpperCase(), includeEmail: !!fields.includeEmail,
+        v: 2, op, network: NETWORK, owner, fingerprint: fields.fingerprint.toUpperCase(), includeEmail: !!fields.includeEmail,
         key: fields.key, ...(fields.signature ? { signature: fields.signature } : {}), ...(fields.index !== undefined && fields.index !== null ? { index: Number(fields.index) } : {}),
+        ...(op === 'reattest' ? { keepRecords: true } : {}),
         authorization: { nonce: Number(n), deadline: Number(deadline), signature },
       }
       setHandoff(h)

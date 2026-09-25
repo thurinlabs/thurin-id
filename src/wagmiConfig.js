@@ -10,7 +10,7 @@ import { getRegistry, isNetworkName, REGISTRY_ABI } from '@thurinlabs/identity-k
 // explorer links. Production builds leave it unset.
 export const NETWORK = isNetworkName(import.meta.env.VITE_CHAIN) ? import.meta.env.VITE_CHAIN : 'mainnet'
 export const CHAIN = NETWORK === 'sepolia' ? sepolia : NETWORK === 'local' ? foundry : mainnet
-// The v2 registry has the same address on every network; VITE_REGISTRY_ADDRESS overrides it
+// The registry has the same address on every network; VITE_REGISTRY_ADDRESS overrides it
 // (e.g. a local deploy that landed elsewhere).
 export const REGISTRY = getRegistry(NETWORK, import.meta.env.VITE_REGISTRY_ADDRESS)
 export const REGISTRY_ADDRESS = REGISTRY.address

@@ -3,7 +3,7 @@ import { useWriteContract, useReadContract } from 'wagmi'
 import { createPublicClient, http, stringToHex, recoverTypedDataAddress } from 'viem'
 import {
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
-  attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, recordKind,
+  attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData,
 } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 
@@ -38,24 +38,28 @@ function timeLeft(unix) {
 function typedDataFor(h) {
   const common = { owner: h.owner, nonce: BigInt(h.authorization.nonce), deadline: BigInt(h.authorization.deadline) }
   switch (h.op) {
-    case 'attest': return attestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, fingerprint: h.fingerprint, pgpSignature: h.signature, pgpPublicKey: h.key })
-    case 'reattest': return reattestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, revokeIndex: BigInt(h.index), fingerprint: h.fingerprint, pgpSignature: h.signature, pgpPublicKey: h.key })
-    case 'update-key': return updateKeyTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), pgpPublicKey: h.key })
-    case 'revoke': return revokeTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index) })
-    case 'set-record': return setRecordTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), kind: recordKind(h.kind), value: h.value ? stringToHex(h.value) : '0x' })
+    case 'attest': return attestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, fingerprint: h.fingerprint, signature: h.signature, key: h.key })
+    case 'reattest': return reattestTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, revokeIndex: BigInt(h.index), fingerprint: h.fingerprint, signature: h.signature, key: h.key, keepRecords: h.keepRecords !== false })
+    case 'update-key': return updateKeyTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), key: h.key })
+    case 'revoke': return revokeTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), reason: h.reason ?? '' })
+    case 'set-record': return setRecordTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(h.index), kind: h.kind, value: h.value ?? '' })
     default: throw new Error(`Unknown operation ${h.op}`)
   }
 }
+
+/** `0x…` hex is raw bytes; anything else (a clearsigned message) is text. */
+const onChainBytes = (v) => (/^0x([0-9a-fA-F]{2})*$/.test(v) ? (v.length - 2) / 2 : new TextEncoder().encode(v).length)
+const payloadArg = (v) => (/^0x([0-9a-fA-F]{2})*$/.test(v) ? v : stringToHex(v))
 
 function argsFor(h) {
   const { deadline, signature } = h.authorization
   const d = BigInt(deadline)
   switch (h.op) {
-    case 'attest': return [h.owner, fingerprintToBytes(h.fingerprint), stringToHex(h.signature), stringToHex(h.key), d, signature]
-    case 'reattest': return [h.owner, BigInt(h.index), fingerprintToBytes(h.fingerprint), stringToHex(h.signature), stringToHex(h.key), d, signature]
-    case 'update-key': return [h.owner, BigInt(h.index), stringToHex(h.key), d, signature]
-    case 'revoke': return [h.owner, BigInt(h.index), d, signature]
-    case 'set-record': return [h.owner, BigInt(h.index), recordKind(h.kind), h.value ? stringToHex(h.value) : '0x', d, signature]
+    case 'attest': return [h.owner, fingerprintToBytes(h.fingerprint), payloadArg(h.signature), payloadArg(h.key), d, signature]
+    case 'reattest': return [h.owner, BigInt(h.index), fingerprintToBytes(h.fingerprint), payloadArg(h.signature), payloadArg(h.key), h.keepRecords !== false, d, signature]
+    case 'update-key': return [h.owner, BigInt(h.index), payloadArg(h.key), d, signature]
+    case 'revoke': return [h.owner, BigInt(h.index), h.reason ?? '', d, signature]
+    case 'set-record': return [h.owner, BigInt(h.index), h.kind, h.value ?? '', d, signature]
     default: throw new Error(`Unknown operation ${h.op}`)
   }
 }
@@ -71,7 +75,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
     address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'nonces', args: [h.owner],
   })
   const { data: rows } = useReadContract({
-    address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'attestationsOf', args: [h.owner],
+    address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'claimsOf', args: [h.owner],
   })
   const target = h.index !== null && rows ? rows[h.index] : null   // the claim being replaced / updated / revoked
 
@@ -100,7 +104,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
         else {
           if (info.fingerprint.toUpperCase() !== h.fingerprint) problems.push('The key in this link is not the key it names.')
           names = info.userIDs; proofs = info.notations.filter(n => identifyProof(n)).length
-          bytes = new TextEncoder().encode(h.key).length
+          bytes = onChainBytes(h.key) + (h.signature ? onChainBytes(h.signature) : 0)
         }
         if (h.signature) {
           const v = await verifyAttestation({ pgpPublicKey: h.key, pgpSignature: h.signature, fingerprint: h.fingerprint, ethAddress: h.owner })
@@ -117,8 +121,10 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
   const handleRelay = async () => {
     try {
       setStatus({ type: 'info', msg: 'Asking the relayer to publish…' })
-      const body = { v: 1, op: h.op, network: NETWORK, owner: h.owner, fingerprint: h.fingerprint, includeEmail: h.includeEmail,
+      const body = { v: 2, op: h.op, network: NETWORK, owner: h.owner, fingerprint: h.fingerprint, includeEmail: h.includeEmail,
         ...(h.key ? { key: h.key } : {}), ...(h.signature ? { signature: h.signature } : {}), ...(h.index !== null ? { index: h.index } : {}),
+        ...(h.op === 'reattest' ? { keepRecords: h.keepRecords } : {}), ...(h.op === 'revoke' ? { reason: h.reason } : {}),
+        ...(h.op === 'set-record' ? { kind: h.kind, value: h.value } : {}),
         authorization: h.authorization }
       const resp = await fetch(RELAYER_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       const data = await resp.json().catch(() => ({}))

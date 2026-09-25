@@ -3,8 +3,8 @@ import { useAccount, useWriteContract, useReadContract, useReadContracts } from 
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import * as openpgp from 'openpgp'
 import { createPublicClient, http, toHex } from 'viem'
-import { payloadText } from '../payload'
-import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyAttestation, verifyStatementSignature, leanKey, leanSignature } from '@thurinlabs/identity-kit'
+import { payloadText, asArmor } from '../payload'
+import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyAttestation, verifyStatementSignature, leanKey, claimSignature } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 import { readHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
@@ -33,7 +33,7 @@ function copyToClipboard(text, e) {
 
 /** The signed block and the public key block out of one terminal paste (prompts and noise around them are ignored). */
 function splitPaste(text) {
-  // A detached signature (the command's output) or a whole clearsigned message (CLI links, older habits).
+  // A detached signature (the command's output) or a whole clearsigned message (gpg --clearsign).
   const sig = text.match(/-----BEGIN PGP SIGNED MESSAGE-----[\s\S]*?-----END PGP SIGNATURE-----/)?.[0]
     ?? text.match(/-----BEGIN PGP SIGNATURE-----[\s\S]*?-----END PGP SIGNATURE-----/)?.[0]
     ?? null
@@ -59,7 +59,7 @@ function gpgPayload(address) {
 // Must match PGPRegistry.MAX_KEY_BYTES (8 KB). The on-chain key only needs to
 // verify the attestation signature and carry the proof notations, so a minimal
 // export stays well under this — and every byte costs gas.
-const MAX_PUBKEY_BYTES = 8192
+const MAX_PUBKEY_BYTES = 16384
 
 // One command: sign the line, then print the same key's public half. Without a chosen key it
 // takes the first secret key that can sign (gpg's own default unless gpg.conf sets default-key);
@@ -187,9 +187,10 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paste, address, wantedFingerprint])
 
-  // What gets published follows the email switch. Lean format: the key as raw bytes (emails left
-  // out unless ticked, SSH-only subkeys left out, newest self-signatures only) and the signature
-  // alone; the line it signs is rebuilt by every reader.
+  // What gets published follows the email switch: the key as raw bytes (emails left out unless
+  // ticked, SSH-only subkeys left out, newest self-signatures only) and the signature alone; the
+  // line it signs is rebuilt by every reader. A clearsign that signed a trailing line break (made
+  // with `echo`) is published whole, so gpg can still verify what the registry returns.
   useEffect(() => {
     if (!verified) return
     let cancelled = false
@@ -205,8 +206,9 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         return
       }
       setNeedsName(false)
-      const sigBytes = await leanSignature(verified.sig)
+      const claimSig = await claimSignature({ signature: verified.sig, key: lean.binary, address })
       if (cancelled) return
+      const sigBytes = claimSig?.signature
       if (!sigBytes) {
         setPreview(null); onVerified(null)
         setStatus({ type: 'err', msg: "Couldn't read the signature. Run the command again and paste all of its output." })
@@ -232,7 +234,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
       const pubInfo = await parsePgpKey(lean.binary)
       const proofsPublished = pubInfo ? pubInfo.notations.filter(n => identifyProof(n)).length : 0
       if (cancelled) return
-      const bytes = keyBytes + sigBytes.length
+      const bytes = keyBytes + (typeof sigBytes === 'string' ? new TextEncoder().encode(sigBytes).length : sigBytes.length)
       const before = new TextEncoder().encode(full).length + new TextEncoder().encode(verified.sig).length
       setPreview({ kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofsPublished, proofsTotal, bytes, before })
       setStatus(null)
@@ -425,19 +427,20 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
     try {
       setPublishStatus({ type: 'info', msg: 'Sending transaction…' })
 
-      // Lean format: raw signature and key bytes (see the sign step).
+      // Raw signature (or the whole clearsigned message) and key bytes (see the sign step).
       const payload = [
         fingerprintToBytes(attestation.gpgFingerprint),
         attestation.gpgSignatureHex,
         attestation.gpgPublicKeyHex,
       ]
-      // `reattest` revokes the chosen claim and publishes the new one in a single transaction.
+      // `reattest` revokes the chosen claim and publishes the new one in a single transaction; the
+      // old claim's records move to the new one.
       const hash = replaceIndex !== null && replaceIndex !== undefined
         ? await writeContractAsync({
             address: REGISTRY_ADDRESS,
             abi: REGISTRY_ABI,
             functionName: 'reattest',
-            args: [BigInt(replaceIndex), ...payload],
+            args: [BigInt(replaceIndex), ...payload, true],
             chainId: CHAIN.id,
           })
         : await writeContractAsync({
@@ -565,12 +568,12 @@ function formatDate(ts) {
   })
 }
 
-/** The connected wallet's claims from the v2 registry, newest first, with the stored key. */
+/** The connected wallet's claims, newest first, with the stored key. */
 function useMyAttestations(address) {
   const { data: rows, refetch: refetchRows, isFetched } = useReadContract({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
-    functionName: 'attestationsOf',
+    functionName: 'claimsOf',
     args: address ? [address] : undefined,
     chainId: CHAIN.id,
     query: { enabled: !!address },
@@ -582,7 +585,7 @@ function useMyAttestations(address) {
     return Array.from({ length: count }, (_, i) => ({
       address: REGISTRY_ADDRESS,
       abi: REGISTRY_ABI,
-      functionName: 'getPayload',
+      functionName: 'keyBytes',
       args: [address, BigInt(i)],
       chainId: CHAIN.id,
     }))
@@ -604,7 +607,7 @@ function useMyAttestations(address) {
           fingerprint: bytesToFingerprint(row.fingerprint),
           createdAt: Number(row.createdAt),
           revoked: revokedAt !== 0,
-          pgpPublicKey: p?.status === 'success' ? payloadText(p.result[1], 'key') : null,
+          pgpPublicKey: p?.status === 'success' ? payloadText(p.result, 'key') : null,
         }
       })
       .reverse()
@@ -800,7 +803,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
         address: REGISTRY_ADDRESS,
         abi: REGISTRY_ABI,
         functionName: 'revoke',
-        args: [BigInt(index)],
+        args: [BigInt(index), ''],
         chainId: CHAIN.id,
       })
 
@@ -894,7 +897,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                       claim={a}
                       address={address}
                       hasEmail={handoff && handoff.index === a.index ? handoff.includeEmail : !!emailByIndex[a.index]}
-                      initialKey={handoff && handoff.index === a.index ? handoff.key : null}
+                      initialKey={handoff && handoff.index === a.index ? asArmor(handoff.key, 'key') : null}
                       onDone={refetch}
                       onCancel={() => setUpdating(null)}
                     />
@@ -941,7 +944,7 @@ export default function Attest() {
   const [linkUsed, setLinkUsed] = useState(false) // a CLI link fills one claim; after that, New claim is a normal one
   const linkClaim = claimHandoff && !linkUsed ? claimHandoff : null
   // The paste lives here so switching tabs mid-way doesn't lose it; a CLI link fills it in.
-  const [paste, setPaste] = useState(claimHandoff?.key && claimHandoff?.signature ? `${claimHandoff.signature}\n${claimHandoff.key}` : '')
+  const [paste, setPaste] = useState(claimHandoff?.key && claimHandoff?.signature ? `${asArmor(claimHandoff.signature, 'signature')}\n${asArmor(claimHandoff.key, 'key')}` : '')
   const [includeEmail, setIncludeEmail] = useState(!!claimHandoff?.includeEmail) // off unless ticked
   const [replaceIndex, setReplaceIndex] = useState(null) // claim to revoke in the same tx, if any
   const { attestations: myClaims, count: myCount, refetch: refetchMine, loaded: myLoaded } = useMyAttestations(address)

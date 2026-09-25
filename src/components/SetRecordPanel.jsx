@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { useWriteContract } from 'wagmi'
-import { createPublicClient, http, stringToHex } from 'viem'
-import { recordKind } from '@thurinlabs/identity-kit'
+import { createPublicClient, http } from 'viem'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL } from '../wagmiConfig'
 
-// A plain (owner-signed-nothing-yet) set-record hand-off from `thurin record … --no-key`:
-// the CLI prepared the value; the owner's wallet publishes it with setRecord.
+// A set-record hand-off from `thurin record … --no-key`: the CLI prepared the value; the
+// owner's wallet publishes it with setRecord.
 
 function shortAddr(a) { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '' }
 function pretty(kind, value) {
@@ -24,7 +23,7 @@ export default function SetRecordPanel({ handoff: h, isConnected }) {
   const publish = async () => {
     try {
       setStatus({ type: 'info', msg: 'Sending transaction…' })
-      const hash = await writeContractAsync({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'setRecord', args: [BigInt(h.index), recordKind(h.kind), h.value ? stringToHex(h.value) : '0x'], chainId: CHAIN.id })
+      const hash = await writeContractAsync({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'setRecord', args: [BigInt(h.index), h.kind, h.value ?? ''], chainId: CHAIN.id })
       setTxHash(hash)
       setStatus({ type: 'info', msg: `Waiting for confirmation… tx: ${hash.slice(0, 10)}…` })
       const client = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) })

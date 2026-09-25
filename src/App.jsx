@@ -7,7 +7,7 @@ import { createPublicClient, http } from 'viem'
 import { payloadText } from './payload'
 import { normalize } from 'viem/ens'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL } from './wagmiConfig'
-import { fingerprintHash, bytesToFingerprint, keyIdToBytes } from '@thurinlabs/identity-kit'
+import { fingerprintToBytes, bytesToFingerprint, keyIdToBytes } from '@thurinlabs/identity-kit'
 import {
   ThurinCard,
   IdentityKitProvider,
@@ -580,7 +580,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                   <th>Fingerprint</th>
                   <th>Date</th>
                   <th>Status <span className="info-icon" title="Active: the claim is live on-chain. Revoked: its owner revoked it. Replaced: its owner replaced it with a newer claim in one transaction.">?</span></th>
-                  <th>PGP <span className="info-icon" title="Checked now, the way gpg does: the key signed a line naming this address, and the key and the subkey that signed are not revoked or expired. Revoked and replaced claims aren't checked.">?</span></th>
+                  <th>PGP <span className="info-icon" title="Checked now, the way gpg does: the key signed the line naming this address, and the key and the subkey that signed are not revoked or expired. Revoked and replaced claims aren't checked.">?</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -765,7 +765,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
   const [error, setError] = useState(null)
   const [verifications, setVerifications] = useState({})
 
-  // Fetch all Attested events for this fingerprint via indexed fingerprintHash
+  // Every claim on this fingerprint: its owners (`ownersOf`), then each owner's matching claims.
   useEffect(() => {
     if (!REGISTRY_ADDRESS || !fingerprint) return
     let cancelled = false
@@ -774,14 +774,12 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
 
     async function load() {
       try {
-        // v2: the registry indexes owners by keccak256 of the raw fingerprint bytes,
-        // and stores every claim's signature + key readably.
         const fpLower = fingerprint.toLowerCase()
         const owners = await chainClient.readContract({
           address: REGISTRY_ADDRESS,
           abi: REGISTRY_ABI,
-          functionName: 'addressesFor',
-          args: [fingerprintHash(fpLower)],
+          functionName: 'ownersOf',
+          args: [fingerprintToBytes(fpLower)],
         })
 
         if (cancelled) return
@@ -791,7 +789,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
           const rows = await chainClient.readContract({
             address: REGISTRY_ADDRESS,
             abi: REGISTRY_ABI,
-            functionName: 'attestationsOf',
+            functionName: 'claimsOf',
             args: [addr],
           })
           for (let idx = 0; idx < rows.length; idx++) {
@@ -799,12 +797,8 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
             if (bytesToFingerprint(row.fingerprint) !== fpLower) continue
             let pgpSignature = null, pgpPublicKey = null
             try {
-              const [sigHex, keyHex] = await chainClient.readContract({
-                address: REGISTRY_ADDRESS,
-                abi: REGISTRY_ABI,
-                functionName: 'getPayload',
-                args: [addr, BigInt(idx)],
-              })
+              const [keyHex, sigHex] = await Promise.all(['keyBytes', 'signatureBytes'].map(functionName =>
+                chainClient.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName, args: [addr, BigInt(idx)] })))
               pgpSignature = payloadText(sigHex, 'signature')
               pgpPublicKey = payloadText(keyHex, 'key')
             } catch {}
@@ -917,8 +911,8 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                 <tr>
                   <th>Address</th>
                   <th>Date</th>
-                  <th>Status <span className="info-icon" title="Active: identity claim is live on-chain. Revoked: owner has revoked this seal.">?</span></th>
-                  <th>PGP <span className="info-icon" title="Verified: the PGP clearsign block stored in the event log is cryptographically valid for this key and binds it to this address. Unverified: signature check failed or PGP data is missing.">?</span></th>
+                  <th>Status <span className="info-icon" title="Active: the claim is live on-chain. Revoked: its owner revoked it.">?</span></th>
+                  <th>PGP <span className="info-icon" title="Checked now, the way gpg does: the key signed the line naming this address, and the key and the subkey that signed are not revoked or expired. Revoked claims aren't checked.">?</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -1103,7 +1097,7 @@ function Explorer() {
         }
         let found = null
         for (const fp of fps) {
-          const owners = await chainClient.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'addressesFor', args: [fingerprintHash(fp)] })
+          const owners = await chainClient.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'ownersOf', args: [fp] })
           if (owners.length) { found = owners[owners.length - 1]; break }
         }
         if (!cancelled) setPreviewIndexed({ key, address: found, done: true })
@@ -1167,7 +1161,7 @@ function Explorer() {
 
   // ─── Contract reads ─────────────────────────────────────────────────────
 
-  // Step 1: the owner's full history in one call (v2 `attestationsOf`)
+  // Step 1: the owner's full history in one call (`claimsOf`)
   const {
     data: attestationRows,
     isLoading: countLoading,
@@ -1175,7 +1169,7 @@ function Explorer() {
   } = useReadContract({
     address: REGISTRY_ADDRESS,
     abi: REGISTRY_ABI,
-    functionName: 'attestationsOf',
+    functionName: 'claimsOf',
     args: lookupAddress ? [lookupAddress] : undefined,
     chainId: CHAIN.id,
     query: { enabled: !!REGISTRY_ADDRESS && !!lookupAddress },
@@ -1184,16 +1178,16 @@ function Explorer() {
   const attestationCount = attestationRows !== undefined ? BigInt(attestationRows.length) : undefined
   const count = attestationRows ? attestationRows.length : 0
 
-  // Step 2: the stored signature + key for each claim (`getPayload`, multicall)
+  // Step 2: the stored key and signature for each claim (`keyBytes`, `signatureBytes`, multicall)
   const payloadContracts = useMemo(() => {
     if (!lookupAddress || !REGISTRY_ADDRESS || count === 0) return []
-    return Array.from({ length: count }, (_, i) => ({
+    return Array.from({ length: count }, (_, i) => ['keyBytes', 'signatureBytes'].map(functionName => ({
       address: REGISTRY_ADDRESS,
       abi: REGISTRY_ABI,
-      functionName: 'getPayload',
+      functionName,
       args: [lookupAddress, BigInt(i)],
       chainId: CHAIN.id,
-    }))
+    }))).flat()
   }, [lookupAddress, count])
 
   const {
@@ -1211,12 +1205,10 @@ function Explorer() {
     if (!attestationRows) return []
     return attestationRows
       .map((row, index) => {
-        const p = payloads?.[index]
-        let pgpSignature = null, pgpPublicKey = null
-        if (p?.status === 'success') {
-          pgpSignature = payloadText(p.result[0], 'signature')
-          pgpPublicKey = payloadText(p.result[1], 'key')
-        }
+        const keyRead = payloads?.[2 * index]
+        const sigRead = payloads?.[2 * index + 1]
+        const pgpPublicKey = keyRead?.status === 'success' ? payloadText(keyRead.result, 'key') : null
+        const pgpSignature = sigRead?.status === 'success' ? payloadText(sigRead.result, 'signature') : null
         const revokedAt = Number(row.revokedAt)
         return {
           index,
@@ -1224,6 +1216,9 @@ function Explorer() {
           createdAt: Number(row.createdAt),
           revoked: revokedAt !== 0,
           revokedAt: revokedAt || null,
+          state: row.state,
+          replacedBy: row.state === 'replaced' ? Number(row.replacedBy) : null,
+          revokeReason: row.revokeReason,
           messageVersion: Number(row.messageVersion),
           pgpSignature,
           pgpPublicKey,

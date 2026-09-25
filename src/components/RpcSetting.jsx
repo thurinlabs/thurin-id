@@ -12,7 +12,7 @@ async function testRpc(url) {
   const client = createPublicClient({ chain: CHAIN, transport: http(url, { timeout: 10_000, retryCount: 0 }) })
   const chainId = await client.getChainId()
   if (chainId !== CHAIN.id) throw new Error(`That RPC is on chain ${chainId}, not ${CHAIN.name}`)
-  await client.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'attestationCount', args: ['0x0000000000000000000000000000000000000000'] })
+  await client.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'claimCount', args: ['0x0000000000000000000000000000000000000000'] })
   return client.getBlockNumber()
 }
 
