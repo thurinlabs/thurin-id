@@ -1,14 +1,12 @@
 import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
 import { version } from '../package.json'
-import { useReadContract, useReadContracts, useEnsName, useAccount } from 'wagmi'
+import { useEnsName, useAccount } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
 import { useSafeAvatar, AvatarImg } from './avatar'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { createPublicClient, http } from 'viem'
-import { payloadText } from './payload'
 import { normalize } from 'viem/ens'
-import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL, typedNameClient } from './wagmiConfig'
-import { fingerprintToBytes, bytesToFingerprint, keyIdToBytes } from '@thurinlabs/identity-kit'
+import { REGISTRY_ADDRESS, NETWORK, CHAIN, EXPLORER_URL, typedNameClient, readClient } from './wagmiConfig'
+import { keyIdToBytes, normalizeFingerprint, readClaims, findOwners, CLAIM_LIMIT } from '@thurinlabs/identity-kit'
 import {
   identifyProof,
   verifyProof,
@@ -16,7 +14,6 @@ import {
   proofHref,
   proofSecondaryHref,
   parsePgpKey,
-  verifyAttestation,
   claimCheckText,
   expiresSoon,
   expiresSoonText,
@@ -34,10 +31,7 @@ import { ReadFailed, EnsNotResolved } from './components/ReadFailed'
 import IdentityTabs from './components/IdentityTabs'
 import RecordsTab from './components/RecordsTab'
 
-const chainClient = createPublicClient({
-  chain: CHAIN,
-  transport: http(RPC_URL),
-})
+const NO_CLAIMS = []
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -479,7 +473,7 @@ function ClaimCheckNote({ check, soon, isSelf }) {
 
 // ─── Address Detail ─────────────────────────────────────────────────────────
 
-function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoading, error, tab = 'overview', onTab }) {
+function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab = 'overview', onTab }) {
   const { address: wallet } = useAccount()
   const isSelf = !!wallet && wallet.toLowerCase() === address.toLowerCase()
   const activeCount = attestations.filter(a => !a.revoked).length
@@ -490,12 +484,6 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
   const fates = useMemo(() => claimFates(attestations), [attestations])
   const check = latest?.verification ? claimCheckText(latest.verification) : null
   const soon = expiresSoon(latest?.verification)
-
-  if (isLoading) {
-    return <div className="status info" style={{ marginTop: 24 }}>Reading the registry…</div>
-  }
-
-  if (error) return <ReadFailed error={error} />
 
   return (
     <div className="detail-page fade-in">
@@ -590,7 +578,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
         <div className="detail-history">
           <div className="mono-box" style={{ marginBottom: 2 }}>
             <div className="label">Identity Proofs</div>
-            <div className="value" style={{ color: 'var(--color-text-muted)' }}>Verifying signature…</div>
+            <div className="value" style={{ color: 'var(--color-text-muted)' }}>Not checked: only the newest {CLAIM_LIMIT} claims are read.</div>
           </div>
         </div>
       ) : latest && latest.pgpPublicKey ? (
@@ -665,7 +653,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                           {a.verification.verified ? 'verified' : rowCheck.label}
                         </span>
                       ) : (
-                        <span className="status-badge" style={{ opacity: 0.4 }}>…</span>
+                        <span className="status-badge" style={{ opacity: 0.6 }} title={`Only the newest ${CLAIM_LIMIT} claims are read and checked`}>not checked</span>
                       )}
                     </td>
                   </tr>
@@ -722,119 +710,28 @@ function ClaimAddressCell({ address }) {
 
 function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
   const { address: wallet } = useAccount()
-  const [claims, setClaims] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [verifications, setVerifications] = useState({})
-
-  // Every claim on this fingerprint: its owners (`ownersOf`), then each owner's matching claims.
-  useEffect(() => {
-    if (!fingerprint) return
-    let cancelled = false
-    setIsLoading(true)
-    setError(null)
-
-    async function load() {
-      try {
-        const fpLower = fingerprint.toLowerCase()
-        const owners = await chainClient.readContract({
-          address: REGISTRY_ADDRESS,
-          abi: REGISTRY_ABI,
-          functionName: 'ownersOf',
-          args: [fingerprintToBytes(fpLower)],
-        })
-
-        if (cancelled) return
-
-        const matching = []
-        for (const addr of owners) {
-          const rows = await chainClient.readContract({
-            address: REGISTRY_ADDRESS,
-            abi: REGISTRY_ABI,
-            functionName: 'claimsOf',
-            args: [addr],
-          })
-          for (let idx = 0; idx < rows.length; idx++) {
-            const row = rows[idx]
-            if (bytesToFingerprint(row.fingerprint) !== fpLower) continue
-            let pgpSignature = null, pgpPublicKey = null
-            try {
-              const [keyHex, sigHex] = await Promise.all(['keyBytes', 'signatureBytes'].map(functionName =>
-                chainClient.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName, args: [addr, BigInt(idx)] })))
-              pgpSignature = payloadText(sigHex, 'signature')
-              pgpPublicKey = payloadText(keyHex, 'key')
-            } catch {}
-            matching.push({
-              address: addr,
-              index: idx,
-              fingerprint: fpLower,
-              pgpSignature,
-              pgpPublicKey,
-              timestamp: Number(row.createdAt),
-              revoked: Number(row.revokedAt) !== 0,
-              state: row.state,
-              replacedBy: row.state === 'replaced' ? Number(row.replacedBy) : null,
-            })
-          }
-        }
-
-        if (!cancelled) {
-          setClaims(matching)
-          setIsLoading(false)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err)
-          setIsLoading(false)
+  // Every claim on this fingerprint: its owners, then each owner's claims for it, read and checked by the kit.
+  const fp = normalizeFingerprint(fingerprint)
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['fingerprint', NETWORK, fp],
+    queryFn: async () => {
+      const matching = []
+      for (const { owner } of await findOwners(readClient, { fingerprint: fp }, { registry: REGISTRY_ADDRESS })) {
+        for (const c of await readClaims(readClient, owner, { registry: REGISTRY_ADDRESS })) {
+          if (c.fingerprint === fp) matching.push({ ...c, address: owner })
         }
       }
-    }
-
-    load()
-    return () => { cancelled = true }
-  }, [fingerprint])
-
-  // Verify PGP proofs for each claim
-  useEffect(() => {
-    if (claims.length === 0) return
-    let cancelled = false
-    async function run() {
-      const results = {}
-      for (const claim of claims) {
-        const key = `${claim.address}-${claim.index}`
-        if (claim.pgpPublicKey && claim.pgpSignature) {
-          results[key] = await verifyAttestation({
-            pgpPublicKey: claim.pgpPublicKey,
-            pgpSignature: claim.pgpSignature,
-            fingerprint: claim.fingerprint,
-            ethAddress: claim.address,
-          })
-        } else {
-          results[key] = { verified: false, reason: 'No PGP data' }
-        }
-      }
-      if (!cancelled) setVerifications(results)
-    }
-    run()
-    return () => { cancelled = true }
-  }, [claims])
+      return matching
+    },
+    enabled: !!fp,
+  })
+  const claims = data ?? NO_CLAIMS
 
   // Only a verified, non-revoked claim may drive the identity panel — there is
   // deliberately no fallback to unverified claims, since a claim's stored key
   // is not authoritative until its signature verifies and binds it to the
   // address.
-  const bestClaim = useMemo(() => {
-    for (const claim of claims) {
-      const key = `${claim.address}-${claim.index}`
-      if (!claim.revoked && verifications[key]?.verified) return claim
-    }
-    return null
-  }, [claims, verifications])
-
-  // Distinguishes "still verifying" from "verified, nothing passed" so a
-  // legitimate identity is never briefly quarantined while checks are in flight.
-  const verificationsReady = claims.length > 0 &&
-    claims.every(c => verifications[`${c.address}-${c.index}`] !== undefined)
+  const bestClaim = useMemo(() => claims.find(c => !c.revoked && c.verification?.verified) ?? null, [claims])
 
   if (isLoading) {
     return <div className="status info" style={{ marginTop: 24 }}>Reading the registry…</div>
@@ -882,11 +779,11 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
               <tbody>
                 {activeClaims.map(claim => {
                   const key = `${claim.address}-${claim.index}`
-                  const v = verifications[key]
+                  const v = claim.verification
                   return (
                     <tr key={key}>
                       <td><ClaimAddressCell address={claim.address} /></td>
-                      <td className="att-date">{formatDate(claim.timestamp)}</td>
+                      <td className="att-date">{formatDate(claim.createdAt)}</td>
                       <td><span className="status-badge active">active</span></td>
                       <td>
                         {v ? (
@@ -895,7 +792,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                             {v.verified ? 'verified' : claimCheckText(v).label}
                           </span>
                         ) : (
-                          <span className="status-badge" style={{ opacity: 0.4 }}>…</span>
+                          <span className="status-badge" style={{ opacity: 0.6 }} title={`Only the newest ${CLAIM_LIMIT} claims are read and checked`}>not checked</span>
                         )}
                       </td>
                     </tr>
@@ -906,7 +803,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                   return (
                     <tr key={key} style={{ opacity: 0.5 }}>
                       <td><ClaimAddressCell address={claim.address} /></td>
-                      <td className="att-date">{formatDate(claim.timestamp)}</td>
+                      <td className="att-date">{formatDate(claim.createdAt)}</td>
                       <td><span className="status-badge revoked">{claim.state === 'replaced' ? `replaced → #${claim.replacedBy}` : 'revoked'}</span></td>
                       <td></td>
                     </tr>
@@ -936,9 +833,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
           <div className="mono-box" style={{ marginBottom: 2 }}>
             <div className="label">Identity Proofs</div>
             <div className="value" style={{ color: 'var(--color-text-muted)' }}>
-              {!verificationsReady
-                ? 'Verifying signatures…'
-                : "No verified claim for this fingerprint, so key data isn't shown."}
+              No verified claim for this fingerprint, so key data isn't shown.
             </div>
             <div className="proof-docs-footer">
               <a href="https://docs.thurin.id/#/guides/proofs" target="_blank" rel="noopener noreferrer">how proofs work</a>
@@ -989,19 +884,13 @@ function Explorer() {
     setKeyIdResolving(true)
     setKeyIdError(null)
 
-    const keyId = keyIdToBytes(submitted.value)
     ;(async () => {
       try {
-        if (!keyId) throw new Error("That isn't a key ID: 16 hex characters.")
-        const fps = await chainClient.readContract({
-          address: REGISTRY_ADDRESS,
-          abi: REGISTRY_ABI,
-          functionName: 'fingerprintsForKeyId',
-          args: [keyId],
-        })
+        if (!keyIdToBytes(submitted.value)) throw new Error("That isn't a key ID: 16 hex characters.")
+        const found = await findOwners(readClient, { keyId: submitted.value }, { registry: REGISTRY_ADDRESS })
         if (cancelled) return
-        if (fps.length === 0) throw new Error('No claim uses this key ID.')
-        const fullFingerprint = bytesToFingerprint(fps[0]).toUpperCase()
+        if (found.length === 0) throw new Error('No claim uses this key ID.')
+        const fullFingerprint = found[0].fingerprint.toUpperCase()
         setQuery(fullFingerprint)
         setSubmitted({ type: 'fingerprint', value: fullFingerprint })
         pushRoute('fingerprint', fullFingerprint)
@@ -1056,107 +945,17 @@ function Explorer() {
 
   // ─── Contract reads ─────────────────────────────────────────────────────
 
-  // Step 1: the owner's full history in one call (`claimsOf`)
-  const {
-    data: attestationRows,
-    isLoading: countLoading,
-    error: countError,
-  } = useReadContract({
-    address: REGISTRY_ADDRESS,
-    abi: REGISTRY_ABI,
-    functionName: 'claimsOf',
-    args: lookupAddress ? [lookupAddress] : undefined,
-    chainId: CHAIN.id,
-    query: { enabled: !!lookupAddress },
+  // The owner's claims, read and checked by the kit; newest first on the page.
+  const { data: claimList, isLoading: claimsLoading, error: claimsError } = useQuery({
+    queryKey: ['claims', NETWORK, lookupAddress],
+    queryFn: () => readClaims(readClient, lookupAddress, { registry: REGISTRY_ADDRESS }),
+    enabled: !!lookupAddress,
   })
-
-  const attestationCount = attestationRows !== undefined ? BigInt(attestationRows.length) : undefined
-  const count = attestationRows ? attestationRows.length : 0
-
-  // Step 2: the stored key and signature for each claim (`keyBytes`, `signatureBytes`, multicall)
-  const payloadContracts = useMemo(() => {
-    if (!lookupAddress || count === 0) return []
-    return Array.from({ length: count }, (_, i) => ['keyBytes', 'signatureBytes'].map(functionName => ({
-      address: REGISTRY_ADDRESS,
-      abi: REGISTRY_ABI,
-      functionName,
-      args: [lookupAddress, BigInt(i)],
-      chainId: CHAIN.id,
-    }))).flat()
-  }, [lookupAddress, count])
-
-  const {
-    data: payloads,
-    isLoading: payloadsLoading,
-    error: attestationsError,
-  } = useReadContracts({
-    contracts: payloadContracts,
-    query: { enabled: payloadContracts.length > 0 },
-  })
-  const attestationsLoading = countLoading || payloadsLoading
-
-  // Step 3: Post-process into display-ready data (newest first)
-  const attestationsRaw = useMemo(() => {
-    if (!attestationRows) return []
-    return attestationRows
-      .map((row, index) => {
-        const keyRead = payloads?.[2 * index]
-        const sigRead = payloads?.[2 * index + 1]
-        const pgpPublicKey = keyRead?.status === 'success' ? payloadText(keyRead.result, 'key') : null
-        const pgpSignature = sigRead?.status === 'success' ? payloadText(sigRead.result, 'signature') : null
-        const revokedAt = Number(row.revokedAt)
-        return {
-          index,
-          fingerprint: bytesToFingerprint(row.fingerprint),
-          createdAt: Number(row.createdAt),
-          revoked: revokedAt !== 0,
-          revokedAt: revokedAt || null,
-          state: row.state,
-          replacedBy: row.state === 'replaced' ? Number(row.replacedBy) : null,
-          revokeReason: row.revokeReason,
-          messageVersion: Number(row.messageVersion),
-          pgpSignature,
-          pgpPublicKey,
-        }
-      })
-      .reverse()
-  }, [attestationRows, payloads])
-
-  // Step 5: Verify PGP proofs for each attestation
-  const [verifications, setVerifications] = useState({})
-  useEffect(() => {
-    if (attestationsRaw.length === 0 || !lookupAddress) return
-    let cancelled = false
-    async function run() {
-      const results = {}
-      for (const att of attestationsRaw) {
-        if (att.pgpPublicKey && att.pgpSignature) {
-          results[att.index] = await verifyAttestation({
-            pgpPublicKey: att.pgpPublicKey,
-            pgpSignature: att.pgpSignature,
-            fingerprint: att.fingerprint,
-            ethAddress: lookupAddress,
-          })
-        } else {
-          results[att.index] = { verified: false, reason: 'No PGP data stored' }
-        }
-      }
-      if (!cancelled) setVerifications(results)
-    }
-    run()
-    return () => { cancelled = true }
-  }, [attestationsRaw, lookupAddress])
-
-  // Merge verification results into attestations
-  const attestations = useMemo(() => {
-    return attestationsRaw.map(a => ({
-      ...a,
-      verification: verifications[a.index] || null,
-    }))
-  }, [attestationsRaw, verifications])
+  const attestations = useMemo(() => (claimList ?? []).slice().reverse(), [claimList])
+  const count = claimList?.length ?? 0
 
   const isAddressLookup = submitted?.type === 'address' || submitted?.type === 'ens'
-  const isLoading = (isAddressLookup && (countLoading || attestationsLoading)) || ensLoading
+  const isLoading = (isAddressLookup && claimsLoading) || ensLoading
 
   // Tabs are routes: switching one pushes /…/claims or /…/records and keeps the lookup.
   const selectTab = (tab) => {
@@ -1273,20 +1072,18 @@ function Explorer() {
         )}
 
         {/* The owner's claim list couldn't be read (AddressDetail needs it to render at all) */}
-        {isAddressLookup && lookupAddress && countError && (
-          <ReadFailed error={countError} />
+        {isAddressLookup && lookupAddress && claimsError && (
+          <ReadFailed error={claimsError} />
         )}
 
         {/* Address/ENS detail page */}
-        {isAddressLookup && lookupAddress && attestationCount !== undefined && (
+        {isAddressLookup && lookupAddress && claimList && (
           <AddressDetail
             address={lookupAddress}
             ensName={displayEns}
             ensAvatar={ensAvatar}
             attestations={attestations}
             count={count}
-            isLoading={attestationsLoading}
-            error={attestationsError}
             tab={submitted.tab || 'overview'}
             onTab={selectTab}
           />

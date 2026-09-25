@@ -1,12 +1,13 @@
-import { Fragment, useState, useCallback, useMemo, useEffect } from 'react'
-import { useAccount, useWriteContract, useReadContract, useReadContracts } from 'wagmi'
+import { Fragment, useState, useMemo, useEffect } from 'react'
+import { useAccount, useWriteContract, useReadContract } from 'wagmi'
+import { useQuery } from '@tanstack/react-query'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import * as openpgp from 'openpgp'
 import { createPublicClient, http, toHex, encodeFunctionData } from 'viem'
-import { payloadText, asArmor } from '../payload'
+import { asArmor } from '../payload'
 import { kindLabel } from '../recordLabels'
-import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyAttestation, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
-import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
+import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, verifyAttestation, readClaims, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
+import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK, readClient } from '../wagmiConfig'
 import { readHandoff, forgetHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
 import Authorize, { useIsEmpty } from './Authorize'
@@ -639,57 +640,15 @@ function formatDate(ts) {
   })
 }
 
-/** The connected wallet's claims, newest first, with the stored key. */
+/** The connected wallet's claims, newest first, read and checked by the kit. */
 function useMyAttestations(address) {
-  const { data: rows, refetch: refetchRows, isFetched } = useReadContract({
-    address: REGISTRY_ADDRESS,
-    abi: REGISTRY_ABI,
-    functionName: 'claimsOf',
-    args: address ? [address] : undefined,
-    chainId: CHAIN.id,
-    query: { enabled: !!address },
+  const { data, refetch, isFetched } = useQuery({
+    queryKey: ['claims', NETWORK, address],
+    queryFn: () => readClaims(readClient, address, { registry: REGISTRY_ADDRESS }),
+    enabled: !!address,
   })
-  const count = rows ? rows.length : 0
-
-  const contracts = useMemo(() => {
-    if (!address || !count) return []
-    return Array.from({ length: count }, (_, i) => ({
-      address: REGISTRY_ADDRESS,
-      abi: REGISTRY_ABI,
-      functionName: 'keyBytes',
-      args: [address, BigInt(i)],
-      chainId: CHAIN.id,
-    }))
-  }, [address, count])
-
-  const { data: payloads, refetch: refetchPayloads } = useReadContracts({
-    contracts,
-    query: { enabled: contracts.length > 0 },
-  })
-
-  const attestations = useMemo(() => {
-    if (!rows) return []
-    return rows
-      .map((row, index) => {
-        const p = payloads?.[index]
-        const revokedAt = Number(row.revokedAt)
-        return {
-          index,
-          fingerprint: bytesToFingerprint(row.fingerprint),
-          createdAt: Number(row.createdAt),
-          revoked: revokedAt !== 0,
-          state: row.state,
-          replacedBy: row.state === 'replaced' ? Number(row.replacedBy) : null,
-          revokeReason: row.revokeReason,
-          pgpPublicKey: p?.status === 'success' ? payloadText(p.result, 'key') : null,
-        }
-      })
-      .reverse()
-  }, [rows, payloads])
-
-  const refetch = useCallback(() => { refetchRows(); refetchPayloads() }, [refetchRows, refetchPayloads])
-  const loaded = isFetched && (count === 0 || payloads !== undefined)
-  return { attestations, count, refetch, loaded }
+  const attestations = useMemo(() => (data ?? []).slice().reverse(), [data])
+  return { attestations, count: data?.length ?? 0, refetch, loaded: isFetched }
 }
 
 /** Paste a fresh export → (strip emails unless included) → `updateKey`. Same key, new notations, no new signature. */

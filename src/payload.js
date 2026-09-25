@@ -1,9 +1,8 @@
 import * as openpgp from 'openpgp'
 import { hexToBytes, hexToString } from 'viem'
 
-// A stored key or signature as armored text, synchronously, for display, copy buttons, and gpg.
-// A clearsigned message comes back as stored. The kit's async `payloadText` does the same.
-export function payloadText(hex, kind) {
+// Raw key or signature bytes as armored text; a clearsigned message comes back as stored.
+function payloadText(hex, kind) {
   if (!hex || hex === '0x') return null
   const bytes = hexToBytes(hex)
   if (bytes[0] === 0x2d) return hexToString(hex) // '-': armored or clearsigned text

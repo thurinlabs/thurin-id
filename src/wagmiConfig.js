@@ -84,5 +84,8 @@ export const config = getDefaultConfig({
   ssr: false,
 })
 
+/** Registry reads for the identity pages; batched into one multicall where the chain has it. */
+export const readClient = createPublicClient({ chain: CHAIN, transport: http(RPC_URL), batch: { multicall: true } })
+
 /** For a name the visitor typed into the search box: there's no other way to answer it. */
 export const typedNameClient = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) })
