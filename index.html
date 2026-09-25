@@ -24,18 +24,9 @@
     <meta name="twitter:description" content="Look up anyone's PGP key, or put yours on your Ethereum address. Anyone can check it, and none of it depends on us." />
     <meta name="twitter:image" content="https://thurin.id/og-image.png" />
     <script>
-      // Theme key migrated from 'thurin-scry-theme' (pre-0.5.0). Read the old key
-      // once, rewrite under the new one, so returning visitors keep their theme.
-      var theme = localStorage.getItem('thurin-theme');
-      if (!theme) {
-        var legacy = localStorage.getItem('thurin-scry-theme');
-        if (legacy) {
-          theme = legacy;
-          localStorage.setItem('thurin-theme', legacy);
-          localStorage.removeItem('thurin-scry-theme');
-        }
-      }
-      // Two modes: light, or dark (the Thurin look). Older choices ('thurin', the old 'dark') land on dark.
+      // Two modes: light, or dark. Any other saved value (older choices included) lands on dark.
+      var theme = null;
+      try { theme = localStorage.getItem('thurin-theme'); } catch (e) {}
       document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
       // Where path routes work (thurin.id, *.eth.limo via _redirects, local dev), pin
       // relative asset URLs to the site root so /eth/<addr> still loads ./assets/*.

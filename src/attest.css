@@ -26,8 +26,6 @@
   --color-primary-glow:    rgba(124, 154, 62, 0.12);
   --color-secondary:       #c9a227;
   --color-accent:          #c9a227;
-  --color-accent-dim:      #a88520;
-  --color-accent-glow:     rgba(201, 162, 39, 0.10);
   --color-success:         #7c9a3e;
   --color-error:           #d44a4a;
   --color-info:            #c9a227;
@@ -57,8 +55,6 @@
   --color-primary-glow:    rgba(124, 154, 62, 0.10);
   --color-secondary:       #a8861e;
   --color-accent:          #a8861e;
-  --color-accent-dim:      #c9a227;
-  --color-accent-glow:     rgba(168, 134, 30, 0.08);
   --color-success:         #5a7228;
   --color-error:           #b83a3a;
   --color-info:            #a8861e;
@@ -414,30 +410,6 @@ body::before {
   background: transparent;
 }
 
-/* ─── Attestation JSON output ─────────────────────────────────────────────── */
-
-.attestation-output {
-  margin-top: 40px;
-  border: 1px solid var(--color-primary-dim);
-  background: var(--color-surface-deep);
-}
-
-.attestation-output-header {
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--color-primary-dim);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.attestation-output-header span {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--color-primary);
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-}
-
 pre {
   font-family: var(--mono);
   font-size: 11px;
@@ -497,32 +469,11 @@ pre {
 
 .row { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 
-.divider {
-  border: none;
-  border-top: 1px solid var(--color-border);
-  margin: 24px 0;
-}
-
 .address {
   font-family: var(--mono);
   font-size: 13px;
   color: var(--color-primary);
 }
-
-/* ─── Chain selector ──────────────────────────────────────────────────────── */
-
-.chain-select {
-  font-family: var(--mono);
-  font-size: 12px;
-  background: var(--color-surface-deep);
-  border: 1px solid var(--color-border);
-  color: var(--color-secondary);
-  padding: 8px 12px;
-  cursor: pointer;
-  outline: none;
-}
-
-.chain-select option { background: var(--color-surface); }
 
 /* ─── Footer ──────────────────────────────────────────────────────────────── */
 
@@ -644,12 +595,6 @@ pre {
     padding: 10px 12px;
   }
 
-  .attestation-output-header {
-    padding: 10px 14px;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
   pre {
     font-size: 10px;
     padding: 14px;
@@ -684,76 +629,6 @@ pre {
 }
 
 .fade-in { animation: fadeIn 0.3s ease forwards; }
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0; }
-}
-
-.cursor::after {
-  content: '\2588';
-  animation: blink 1s step-end infinite;
-  color: var(--color-primary);
-  margin-left: 2px;
-}
-
-/* ─── Email choice cards (step 02) ───────────────────────────────────────── */
-
-.choice-cards {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 12px;
-}
-
-.choice-card {
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  background: var(--color-surface-deep);
-  border: 2px solid var(--color-border);
-  padding: 24px;
-  cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-}
-
-.choice-card:hover {
-  border-color: var(--color-primary-dim);
-  background: var(--color-surface-active);
-}
-
-.choice-card.selected {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 28px var(--color-primary-glow);
-}
-
-.choice-card h3 {
-  font-family: var(--heading);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  color: var(--color-heading);
-  margin: 8px 0 10px;
-}
-
-.choice-card p {
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--color-text-muted);
-  margin: 0;
-}
-
-.choice-tag {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-primary);
-}
-
-@media (max-width: 600px) {
-  .choice-cards { grid-template-columns: 1fr; }
-}
 
 /* ─── Tabs: manage existing claims vs. create a new one ─── */
 .attest-tabs {

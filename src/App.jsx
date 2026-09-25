@@ -10,7 +10,6 @@ import { normalize } from 'viem/ens'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL, typedNameClient } from './wagmiConfig'
 import { fingerprintToBytes, bytesToFingerprint, keyIdToBytes } from '@thurinlabs/identity-kit'
 import {
-  IdentityKitProvider,
   identifyProof,
   verifyProof,
   displayUrl,
@@ -26,7 +25,6 @@ import {
 } from '@thurinlabs/identity-kit'
 import { siteLinks } from './links'
 import Attest from './components/Attest'
-import LookupPreview from './components/LookupPreview'
 import EnsRecordLine from './components/EnsRecordLine'
 import AccountMenu from './components/AccountMenu'
 import RpcSetting from './components/RpcSetting'
@@ -731,7 +729,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
 
   // Every claim on this fingerprint: its owners (`ownersOf`), then each owner's matching claims.
   useEffect(() => {
-    if (!REGISTRY_ADDRESS || !fingerprint) return
+    if (!fingerprint) return
     let cancelled = false
     setIsLoading(true)
     setError(null)
@@ -1019,58 +1017,6 @@ function Explorer() {
     return () => { cancelled = true }
   }, [submitted?.type, submitted?.value])
 
-  // ─── Live preview of what is being typed ────────────────────────────────
-  // Debounced so a keystroke burst is one lookup; cleared once a lookup is submitted.
-  const [preview, setPreview] = useState(null)
-  useEffect(() => {
-    if (submitted || !inputType) { setPreview(null); return }
-    const value = query.trim()
-    const id = setTimeout(() => setPreview({ type: inputType, value }), 350)
-    return () => clearTimeout(id)
-  }, [query, inputType, submitted])
-
-  const previewEns = preview?.type === 'ens' ? safeNormalize(preview.value) : null
-  const { data: previewEnsAddress, isLoading: previewEnsLoading, isFetched: previewEnsFetched } = useTypedEnsAddress(previewEns)
-
-  // Fingerprint / key ID → address through the registry's own indexes.
-  const [previewIndexed, setPreviewIndexed] = useState({ key: null, address: null, done: false })
-  useEffect(() => {
-    if (!preview || (preview.type !== 'fingerprint' && preview.type !== 'keyId')) return
-    let cancelled = false
-    const key = `${preview.type}:${preview.value}`
-    setPreviewIndexed({ key, address: null, done: false })
-    ;(async () => {
-      try {
-        let fps
-        if (preview.type === 'keyId') {
-          const keyId = keyIdToBytes(preview.value)
-          fps = keyId ? await chainClient.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'fingerprintsForKeyId', args: [keyId] }) : []
-        } else {
-          fps = ['0x' + preview.value.toLowerCase()]
-        }
-        let found = null
-        for (const fp of fps) {
-          const owners = await chainClient.readContract({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'ownersOf', args: [fp] })
-          if (owners.length) { found = owners[owners.length - 1]; break }
-        }
-        if (!cancelled) setPreviewIndexed({ key, address: found, done: true })
-      } catch {
-        if (!cancelled) setPreviewIndexed({ key, address: null, done: true })
-      }
-    })()
-    return () => { cancelled = true }
-  }, [preview?.type, preview?.value])
-
-  const previewAddress = !preview ? null
-    : preview.type === 'address' ? preview.value
-    : preview.type === 'ens' ? (previewEnsAddress || null)
-    : (previewIndexed.key === `${preview.type}:${preview.value}` ? previewIndexed.address : null)
-  const previewResolving = !!preview && !previewAddress && (
-    preview.type === 'ens' ? previewEnsLoading || !previewEnsFetched
-    : preview.type === 'address' ? false
-    : !(previewIndexed.key === `${preview.type}:${preview.value}` && previewIndexed.done))
-  const previewNotFound = !!preview && !previewAddress && !previewResolving
-
   const handleLookup = useCallback(() => {
     if (!inputType) return
     const value = query.trim()
@@ -1121,7 +1067,7 @@ function Explorer() {
     functionName: 'claimsOf',
     args: lookupAddress ? [lookupAddress] : undefined,
     chainId: CHAIN.id,
-    query: { enabled: !!REGISTRY_ADDRESS && !!lookupAddress },
+    query: { enabled: !!lookupAddress },
   })
 
   const attestationCount = attestationRows !== undefined ? BigInt(attestationRows.length) : undefined
@@ -1129,7 +1075,7 @@ function Explorer() {
 
   // Step 2: the stored key and signature for each claim (`keyBytes`, `signatureBytes`, multicall)
   const payloadContracts = useMemo(() => {
-    if (!lookupAddress || !REGISTRY_ADDRESS || count === 0) return []
+    if (!lookupAddress || count === 0) return []
     return Array.from({ length: count }, (_, i) => ['keyBytes', 'signatureBytes'].map(functionName => ({
       address: REGISTRY_ADDRESS,
       abi: REGISTRY_ABI,
@@ -1211,8 +1157,6 @@ function Explorer() {
 
   const isAddressLookup = submitted?.type === 'address' || submitted?.type === 'ens'
   const isLoading = (isAddressLookup && (countLoading || attestationsLoading)) || ensLoading
-  const error = countError || attestationsError
-  const noContract = !REGISTRY_ADDRESS
 
   // Tabs are routes: switching one pushes /…/claims or /…/records and keeps the lookup.
   const selectTab = (tab) => {
@@ -1264,29 +1208,10 @@ function Explorer() {
           </div>
         )}
 
-        {query.trim() && inputType && (submitted || !preview) && (
+        {query.trim() && inputType && (
           <div className="lookup-detected" style={{ marginTop: 8 }}>
             Detected: <span className="lookup-type">{inputType === 'keyId' ? 'key ID' : inputType}</span>
           </div>
-        )}
-        {!submitted && (
-          <>
-            {preview && (
-              <IdentityKitProvider
-                rpcUrl={RPC_URL}
-                network={NETWORK}
-              >
-                <LookupPreview
-                  key={`${preview.type}:${preview.value}`}
-                  address={previewAddress}
-                  name={preview.type === 'ens' ? preview.value : null}
-                  resolving={previewResolving}
-                  notFound={previewNotFound}
-                  onOpen={handleLookup}
-                />
-              </IdentityKitProvider>
-            )}
-          </>
         )}
       </div>
 
@@ -1348,58 +1273,12 @@ function Explorer() {
         )}
 
         {/* The owner's claim list couldn't be read (AddressDetail needs it to render at all) */}
-        {!noContract && isAddressLookup && lookupAddress && countError && (
+        {isAddressLookup && lookupAddress && countError && (
           <ReadFailed error={countError} />
         )}
 
-        {/* Contract not deployed — fallback with whatever data we have */}
-        {noContract && submitted && (submitted.type !== 'ens' || ensResolvedAddress) && (
-          <div className="result-card fade-in" style={{ marginTop: 24 }}>
-            <div className="result-card-header">
-              <span className="result-card-label">Registry Status</span>
-            </div>
-            <div className="result-card-body">
-              <div className="status info">
-                No registry is set for this build, so there's nothing to look up.
-                <div style={{ marginTop: 8 }}>
-                  <a href="/attest" className="fingerprint-link">
-                    Add your key →
-                  </a>
-                </div>
-              </div>
-              {submitted.type === 'ens' && ensResolvedAddress && (
-                <>
-                  <div className="mono-box" style={{ marginTop: 16 }}>
-                    <div className="label">ens name</div>
-                    <div className="value">{submitted.value}</div>
-                  </div>
-                  <div className="mono-box" style={{ marginTop: 8 }}>
-                    <div className="label">resolved address</div>
-                    <div className="value">{ensResolvedAddress}</div>
-                  </div>
-                </>
-              )}
-              {submitted.type === 'address' && (
-                <div className="mono-box" style={{ marginTop: 16 }}>
-                  <div className="label">queried address</div>
-                  <div className="value">
-                    {submitted.value}
-                    {reverseEns && <span className="ens-reverse"> ({reverseEns})</span>}
-                  </div>
-                </div>
-              )}
-              {submitted.type === 'fingerprint' && (
-                <div className="mono-box" style={{ marginTop: 16 }}>
-                  <div className="label">queried fingerprint</div>
-                  <div className="value">{submitted.value}</div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
         {/* Address/ENS detail page */}
-        {!noContract && isAddressLookup && lookupAddress && attestationCount !== undefined && (
+        {isAddressLookup && lookupAddress && attestationCount !== undefined && (
           <AddressDetail
             address={lookupAddress}
             ensName={displayEns}
@@ -1414,12 +1293,12 @@ function Explorer() {
         )}
 
         {/* Fingerprint detail page */}
-        {!noContract && submitted?.type === 'fingerprint' && (
+        {submitted?.type === 'fingerprint' && (
           <FingerprintDetail fingerprint={submitted.value} tab={submitted.tab || 'overview'} onTab={selectTab} />
         )}
 
         {/* Loading (contract reads) */}
-        {!noContract && isLoading && submitted && !ensLoading && (
+        {isLoading && submitted && !ensLoading && (
           <div className="status info" style={{ marginTop: 24 }}>
             Reading the registry…
           </div>

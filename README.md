@@ -65,7 +65,7 @@ The explorer reads attestations straight from the `PGPRegistry` contract — his
 
 **Who your browser talks to** when it checks an identity, and so sees your IP and which identity you looked at:
 - an Ethereum node: the keyless `ethereum.publicnode.com` by default, or your own (footer → Change);
-- the platforms behind each proof (GitHub, Codeberg, Cloudflare DNS, the public Farcaster node, the named Mastodon server) and EFP;
+- the platforms behind each proof (GitHub, Codeberg, Cloudflare DNS, the public Farcaster node, the named Mastodon server), only when you press Check proofs or turn on Always check;
 - for avatars, euc.li, an IPFS gateway, or arweave.net, never a server the name's owner picked.
 
 Wallets connect only when you choose to. The full answer, including what isn't solved: [CROPS](https://docs.thurin.id/#/crops) · [privacy policy](https://thurinlabs.id/privacy/).

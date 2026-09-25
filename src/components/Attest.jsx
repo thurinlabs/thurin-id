@@ -52,7 +52,7 @@ function normalizeKeyChoice(text) {
   return { value: '', error: 'Use the key\'s fingerprint, an email on it, or a name on it.' }
 }
 
-// The message GPG signs — must match exactly
+// The line gpg signs; it must match exactly
 function gpgPayload(address) {
   return `I control the Ethereum address: ${address.toLowerCase()}`
 }
