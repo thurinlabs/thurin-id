@@ -1,12 +1,13 @@
 import { Fragment, useState, useEffect, useCallback, useMemo } from 'react'
 import { version } from '../package.json'
-import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useAccount } from 'wagmi'
+import { useReadContract, useReadContracts, useEnsName, useAccount } from 'wagmi'
+import { useQuery } from '@tanstack/react-query'
 import { useSafeAvatar, AvatarImg } from './avatar'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { createPublicClient, http } from 'viem'
 import { payloadText } from './payload'
 import { normalize } from 'viem/ens'
-import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL } from './wagmiConfig'
+import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL, typedNameClient } from './wagmiConfig'
 import { fingerprintToBytes, bytesToFingerprint, keyIdToBytes } from '@thurinlabs/identity-kit'
 import {
   IdentityKitProvider,
@@ -17,7 +18,6 @@ import {
   proofSecondaryHref,
   parsePgpKey,
   verifyAttestation,
-  fetchEFPGraph,
   claimCheckText,
   expiresSoon,
   expiresSoonText,
@@ -30,6 +30,8 @@ import LookupPreview from './components/LookupPreview'
 import EnsRecordLine from './components/EnsRecordLine'
 import AccountMenu from './components/AccountMenu'
 import RpcSetting from './components/RpcSetting'
+import ProofSetting from './components/ProofSetting'
+import { useAlwaysCheckProofs, CHECK_NOTE } from './proofChecks'
 import { ReadFailed, EnsNotResolved } from './components/ReadFailed'
 import IdentityTabs from './components/IdentityTabs'
 import RecordsTab from './components/RecordsTab'
@@ -96,6 +98,20 @@ function useSiteTheme() {
     return () => observer.disconnect()
   }, [])
   return theme
+}
+
+/**
+ * The address of an ENS name the visitor typed. It may follow the name to a server its owner
+ * picked (an offchain name), since there's no other way to answer; nothing else on the site does.
+ */
+function useTypedEnsAddress(name) {
+  const q = useQuery({
+    queryKey: ['typed-ens-address', CHAIN.id, name],
+    queryFn: async () => (await typedNameClient.getEnsAddress({ name })) ?? null,
+    enabled: !!name,
+    staleTime: 60_000,
+  })
+  return { data: q.data ?? undefined, isLoading: q.isLoading, isFetched: q.isFetched, error: q.error }
 }
 
 /** Card images are drawn behind thurin.id itself; a copy served elsewhere (an ENS gateway) asks thurin.id. */
@@ -265,6 +281,10 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
   const [keyInfo, setKeyInfo] = useState(null)
   const [showKey, setShowKey] = useState(false)
   const [proofResults, setProofResults] = useState({})
+  // Proofs are checked when the visitor asks (or always, if they chose that in the footer).
+  const alwaysCheck = useAlwaysCheckProofs()
+  const [asked, setAsked] = useState(false)
+  const checking = asked || alwaysCheck
 
   // The on-chain key is the source of truth for the published identity and its
   // proofs. No keyserver: keys.openpgp.org only serves email-verified user IDs
@@ -276,9 +296,9 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
     return () => { cancelled = true }
   }, [armoredKey])
 
-  // Verify identity proofs
+  // Verify identity proofs, once the visitor asks
   useEffect(() => {
-    if (!keyInfo) return
+    if (!keyInfo || !checking) return
     let cancelled = false
 
     const proofs = keyInfo.notations
@@ -306,7 +326,7 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
     })
 
     return () => { cancelled = true }
-  }, [keyInfo])
+  }, [keyInfo, checking])
 
   if (!keyInfo) return null
 
@@ -331,7 +351,14 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
           .filter(p => p.proof)
         return (
           <div className="mono-box" style={{ marginBottom: 2 }}>
-            <div className="label">Identity Proofs</div>
+            <div className="proofs-head">
+              <div className="label">Identity Proofs</div>
+              {!checking && thurinProofs.length > 0 && (
+                <button className="btn btn-small" onClick={() => setAsked(true)}>
+                  Check {thurinProofs.length} proof{thurinProofs.length === 1 ? '' : 's'}
+                </button>
+              )}
+            </div>
             {thurinProofs.length === 0 ? (
               <div className="value" style={{ color: 'var(--color-text-muted)' }}>No proofs found</div>
             ) : thurinProofs.map(({ index, proof }) => {
@@ -340,8 +367,10 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
               const href = proofHref(proof)
               const secondary = proofSecondaryHref(proof)
               return (
-                <div key={index} className="proof-row">
-                  {result ? (
+                <div key={index} className={`proof-row${checking ? '' : ' unchecked'}`}>
+                  {!checking ? (
+                    <span className="proof-icon unchecked" title="Not checked: anyone can write any handle into their own key">&#9675;</span>
+                  ) : result ? (
                     result.status === 'pending' ? (
                       <span className="proof-icon pending" title="Checking...">&#8943;</span>
                     ) : result.status === 'verified' ? (
@@ -359,9 +388,11 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
                   {secondary && (
                     <a href={secondary} className="proof-secondary" target="_blank" rel="noopener noreferrer">proof</a>
                   )}
+                  {!checking && <span className="proof-unchecked">not checked</span>}
                 </div>
               )
             })}
+            {!checking && thurinProofs.length > 0 && <div className="proof-note">{CHECK_NOTE}</div>}
             <div className="proof-docs-footer">
               <a href="https://docs.thurin.id/#/guides/proofs" target="_blank" rel="noopener noreferrer">how to add proofs</a>
             </div>
@@ -488,6 +519,10 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                   etherscan
                 </a>
               )}
+              {ensName && (
+                <a className="detail-link" href={`https://app.ens.domains/${ensName}`} target="_blank" rel="noopener noreferrer">ens</a>
+              )}
+              <a className="detail-link" href={`https://efp.app/${address}`} target="_blank" rel="noopener noreferrer">efp</a>
             </div>
             {ensName && <div className="detail-ens">{ensName}</div>}
             {isSelf && <div className="detail-self" title="The connected wallet is this address. Records and the ENS record can be set from this page.">this is you</div>}
@@ -586,7 +621,6 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
         </div>
       )}
 
-      <EfpSection address={address} />
       </>)}
 
       {tab === 'claims' && attestations.length > 0 && (
@@ -664,96 +698,6 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
         </div>
       )}
     </div>
-  )
-}
-
-// ─── EFP (Ethereum Follow Protocol) ─────────────────────────────────────────
-
-function EfpSection({ address }) {
-  const [graph, setGraph] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    if (!address) return
-    let cancelled = false
-    setIsLoading(true)
-    setGraph(null)
-
-    fetchEFPGraph(address).then(result => {
-      if (cancelled) return
-      setGraph(result)
-      setIsLoading(false)
-    })
-
-    return () => { cancelled = true }
-  }, [address])
-
-  const hasEfp = !!graph
-
-  if (!isLoading && !hasEfp) return null
-  if (isLoading) return (
-    <div className="detail-history">
-      <div className="detail-label">Social Graph</div>
-      <div className="mono-box" style={{ marginBottom: 2 }}>
-        <div className="value" style={{ color: 'var(--color-text-muted)' }}>Loading EFP data...</div>
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="detail-history">
-      <div className="detail-label">
-        Social Graph
-        <span style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginLeft: 8, fontWeight: 'normal' }}>
-          via <a href="https://efp.app" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit' }}>EFP</a>
-        </span>
-      </div>
-      <div className="mono-box" style={{ marginBottom: 2 }}>
-        <div className="summary-grid" style={{ marginBottom: graph.top8.length > 0 ? 12 : 0 }}>
-          <div className="summary-item">
-            <span className="summary-value">{graph.followers}</span>
-            <span className="summary-key">Followers</span>
-          </div>
-          <div className="summary-item">
-            <span className="summary-value">{graph.following}</span>
-            <span className="summary-key">Following</span>
-          </div>
-        </div>
-        {graph.top8.length > 0 && (
-          <>
-            <div className="label">Top 8</div>
-            <div className="efp-top8">
-              {graph.top8.map((addr, i) => (
-                <EfpFollowItem key={i} address={addr} />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-      <div style={{ textAlign: 'right', marginTop: 4 }}>
-        <a
-          href={`https://efp.app/${address}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}
-        >
-          view full profile on efp.app
-        </a>
-      </div>
-    </div>
-  )
-}
-
-function EfpFollowItem({ address }) {
-  const { data: ensName } = useEnsName({
-    address,
-    chainId: CHAIN.id,
-    query: { enabled: !!address },
-  })
-  return (
-    <a href={`/eth/${address}`} className="efp-top8-item" title={address}>
-      {ensName || `${address.slice(0, 8)}...${address.slice(-4)}`}
-    </a>
   )
 }
 
@@ -1083,11 +1027,7 @@ function Explorer() {
   }, [query, inputType, submitted])
 
   const previewEns = preview?.type === 'ens' ? safeNormalize(preview.value) : null
-  const { data: previewEnsAddress, isLoading: previewEnsLoading, isFetched: previewEnsFetched } = useEnsAddress({
-    name: previewEns || undefined,
-    chainId: CHAIN.id,
-    query: { enabled: !!previewEns },
-  })
+  const { data: previewEnsAddress, isLoading: previewEnsLoading, isFetched: previewEnsFetched } = useTypedEnsAddress(previewEns)
 
   // Fingerprint / key ID → address through the registry's own indexes.
   const [previewIndexed, setPreviewIndexed] = useState({ key: null, address: null, done: false })
@@ -1151,11 +1091,7 @@ function Explorer() {
     data: ensResolvedAddress,
     isLoading: ensLoading,
     error: ensError,
-  } = useEnsAddress({
-    name: normalizedEns,
-    chainId: CHAIN.id,
-    query: { enabled: !!normalizedEns },
-  })
+  } = useTypedEnsAddress(normalizedEns)
 
   const lookupAddress = submitted?.type === 'address' ? submitted.value
     : submitted?.type === 'ens' ? ensResolvedAddress
@@ -1510,6 +1446,7 @@ export default function App() {
         <div className="footer-left">
           <span className="footer-version">thurin v{version}</span>
           <RpcSetting />
+          <ProofSetting />
         </div>
         <div className="footer-columns">
           <div className="footer-col">

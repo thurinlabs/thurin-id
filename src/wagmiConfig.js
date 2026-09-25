@@ -1,6 +1,7 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit'
 import { safeWallet, rainbowWallet, base, metaMaskWallet, ledgerWallet, trustWallet, zerionWallet } from '@rainbow-me/rainbowkit/wallets'
 import { http } from 'wagmi'
+import { createClient, createPublicClient } from 'viem'
 import { mainnet, sepolia, foundry } from 'wagmi/chains'
 import { getRegistry, isNetworkName, REGISTRY_ABI } from '@thurinlabs/identity-kit'
 
@@ -75,5 +76,13 @@ export const config = getDefaultConfig({
   transports: {
     [CHAIN.id]: http(RPC_URL),
   },
+  // An ENS name can keep its data on a server its owner picks ("offchain" names, followed via
+  // CCIP-read); following one hands that server the visitor's IP and the name. The site never
+  // does that for names it looks up by itself (an address's name, an affiliation, avatars):
+  // only for a name the visitor typed, through `typedNameClient` below.
+  client: ({ chain }) => createClient({ chain, transport: http(RPC_URL), ccipRead: false }),
   ssr: false,
 })
+
+/** For a name the visitor typed into the search box: there's no other way to answer it. */
+export const typedNameClient = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) })

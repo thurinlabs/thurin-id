@@ -581,27 +581,6 @@ body::before {
 
 /* ─── EFP Social Graph ────────────────────────────────────────────────────── */
 
-.efp-top8 {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.efp-top8-item {
-  font-family: var(--mono);
-  font-size: 13px;
-  color: var(--color-link);
-  text-decoration: none;
-  padding: 3px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  transition: border-color 0.15s;
-}
-
-.efp-top8-item:hover {
-  border-color: var(--color-link);
-}
 
 /* ─── Attestation Table ───────────────────────────────────────────────────── */
 
@@ -744,6 +723,20 @@ body::before {
   color: var(--color-text-muted);
   opacity: 0.5;
 }
+
+/* Not checked yet: grey, no mark, so a handle anyone could type never looks like a proof. */
+.proof-icon.unchecked { color: var(--color-text-muted); opacity: 0.6; }
+.proof-row.unchecked .proof-link { color: var(--color-text-muted); }
+.proof-unchecked {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.proofs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.proof-note { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--color-text-muted); white-space: normal; }
 
 .proof-provider {
   font-family: var(--mono);
@@ -1194,6 +1187,7 @@ a.proof-link:hover {
 
 .lookup-row-status.ok { color: var(--color-primary); }
 .lookup-row-status.bad { color: var(--color-error); }
+.lookup-row-status.neutral { color: var(--color-text-muted); }
 
 .lookup-preview-foot {
   display: flex;

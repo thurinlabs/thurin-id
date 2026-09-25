@@ -3,6 +3,7 @@ import { useEnsName } from 'wagmi'
 import { useSafeAvatar, AvatarImg } from '../avatar'
 import { normalize } from 'viem/ens'
 import { useAttestations, parsePgpKey, identifyProof, verifyProof, displayUrl } from '@thurinlabs/identity-kit'
+import { useAlwaysCheckProofs } from '../proofChecks'
 import { CHAIN } from '../wagmiConfig'
 
 // Plain-language labels for the rows a visitor sees.
@@ -29,13 +30,13 @@ function Tick() {
   )
 }
 
-function Row({ label, value, status, ok }) {
+function Row({ label, value, status, ok, neutral = false }) {
   // status null = still checking: the row is there, the verdict is not
   return (
     <div className={`lookup-row${status ? ' lookup-row-done' : ''}`}>
       <span className="lookup-row-label">{label}</span>
       <span className="lookup-row-value">{value}</span>
-      <span className={`lookup-row-status${status ? (ok ? ' ok' : ' bad') : ''}`}>
+      <span className={`lookup-row-status${status ? (ok ? ' ok' : neutral ? ' neutral' : ' bad') : ''}`}>
         {status ? <>{ok && <Tick />}{status}</> : '…'}
       </span>
     </div>
@@ -72,7 +73,9 @@ export default function LookupPreview({ address, name, resolving, notFound, onOp
   const noClaim = !isLoading && claims.length > 0 && !verifying && !claim
   const empty = !!address && !isLoading && claims.length === 0
 
-  // Proofs from the on-chain key, verified one by one so rows land as they finish.
+  // Proofs from the on-chain key. Checked (one by one, rows landing as they finish) only when the
+  // visitor chose "Always check" in the footer; the full page has the button.
+  const alwaysCheck = useAlwaysCheckProofs()
   const [proofs, setProofs] = useState([])
   const [results, setResults] = useState({})
   const [parsed, setParsed] = useState(false)
@@ -90,6 +93,7 @@ export default function LookupPreview({ address, name, resolving, notFound, onOp
       const unique = found.filter(p => (seen.has(p.url) ? false : seen.add(p.url)))
       setProofs(unique)
       setParsed(true)
+      if (!alwaysCheck) return
       unique.forEach(async (p) => {
         let r
         try {
@@ -101,9 +105,9 @@ export default function LookupPreview({ address, name, resolving, notFound, onOp
       })
     })()
     return () => { cancelled = true }
-  }, [claim])
+  }, [claim, alwaysCheck])
 
-  const allDone = !!claim && parsed && proofs.every(p => results[p.url])
+  const allDone = !!claim && parsed && (!alwaysCheck || proofs.every(p => results[p.url]))
   const headline = displayName || (address ? shortAddress(address) : null)
   const openValue = name || address
 
@@ -153,8 +157,9 @@ export default function LookupPreview({ address, name, resolving, notFound, onOp
                 key={p.url}
                 label={PROVIDER_LABELS[p.provider] || p.label}
                 value={displayUrl(p)}
-                status={r ? (r.verified ? 'confirmed' : 'not confirmed') : null}
+                status={!alwaysCheck ? 'not checked' : r ? (r.verified ? 'confirmed' : 'not confirmed') : null}
                 ok={!!r?.verified}
+                neutral={!alwaysCheck}
               />
             )
           })}
