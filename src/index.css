@@ -906,10 +906,12 @@ a.proof-link:hover {
     font-size: 21px;
   }
 
-  /* Phones: drop the Attest link (it's in the footer), keep the wallet button. */
+  /* Phones: drop the Add key / Search link (adding a key needs gpg on a computer; it's in the
+     footer), keep the wallet button. */
   .topbar-action-link:not(.topbar-connect-btn) {
     display: none;
   }
+
 
   .lookup-input-row {
     flex-direction: column;

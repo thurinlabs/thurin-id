@@ -131,14 +131,14 @@ export default function LookupPreview({ address, name, resolving, notFound, onOp
       )}
 
       {empty && (
-        <p className="lookup-preview-note">No claim on Thurin for this identity yet.</p>
+        <p className="lookup-preview-note">No claim for this identity yet.</p>
       )}
 
       {address && !empty && (
         <>
           <Row
             label="Ethereum"
-            value={`${shortAddress(address)} · published this claim`}
+            value={shortAddress(address)}
             status={isLoading ? null : (noClaim ? 'no active claim' : 'on record')}
             ok={!noClaim}
           />
@@ -146,7 +146,7 @@ export default function LookupPreview({ address, name, resolving, notFound, onOp
             <Row
               label="PGP key"
               value={formatFingerprint((claim || claims.find(c => !c.revoked) || claims[0]).fingerprint)}
-              status={claim ? 'matches' : (noClaim ? 'does not match' : null)}
+              status={claim ? 'verified' : (noClaim ? 'not verified' : null)}
               ok={!!claim}
             />
           )}
@@ -157,7 +157,7 @@ export default function LookupPreview({ address, name, resolving, notFound, onOp
                 key={p.url}
                 label={PROVIDER_LABELS[p.provider] || p.label}
                 value={displayUrl(p)}
-                status={!alwaysCheck ? 'not checked' : r ? (r.verified ? 'confirmed' : 'not confirmed') : null}
+                status={!alwaysCheck ? 'not checked' : r ? (r.verified ? 'verified' : 'not verified') : null}
                 ok={!!r?.verified}
                 neutral={!alwaysCheck}
               />
@@ -168,7 +168,7 @@ export default function LookupPreview({ address, name, resolving, notFound, onOp
 
       {(address || resolving) && !notFound && (
         <div className={`lookup-preview-foot${allDone ? ' lookup-preview-foot-done' : ''}`}>
-          <span>{allDone ? 'checked just now, in your browser · nothing passed through us' : 'checking in your browser…'}</span>
+          <span>{allDone ? 'claim checked just now, in your browser · nothing passed through us' : 'checking in your browser…'}</span>
           {openValue && (
             <a href={name ? `/ens/${name}` : `/eth/${address}`}
               onClick={(e) => { if (onOpen) { e.preventDefault(); onOpen() } }}>

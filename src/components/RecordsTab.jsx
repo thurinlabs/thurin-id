@@ -80,7 +80,7 @@ function Body({ r }) {
       return (
         <>
           <div className="value"><a href={identityHref(d.with)} className="fingerprint-link">{d.with}</a>{d.role && <span style={{ color: 'var(--color-text-muted)' }}> · {d.role}</span>}</div>
-          <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>Stated by this identity. Not yet acknowledged by the other side.</div>
+          <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>Stated by this identity. The other side's own record would confirm it.</div>
         </>
       )
     case 'canary':
@@ -169,7 +169,7 @@ function RecordForm({ index, armoredKey, fingerprint, existing, initialKind, ini
       setStatus({ type: 'info', msg: `Waiting for confirmation… tx ${hash.slice(0, 10)}…` })
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
       if (receipt.status === 'success') { setStatus({ type: 'ok', msg: '✓ Record set.', hash }); onDone() }
-      else setStatus({ type: 'err', msg: `Transaction reverted. Tx: ${hash}` })
+      else setStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
     } catch (err) {
       setStatus({ type: 'err', msg: err.shortMessage || err.message })
     }
@@ -219,7 +219,7 @@ function ClearButton({ index, kind, onDone }) {
       setBusy(true); setErr(null)
       const hash = await writeContractAsync({ address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'setRecord', args: [BigInt(index), kind, ''], chainId: CHAIN.id })
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
-      if (receipt.status !== 'success') throw new Error(`Transaction reverted: ${hash}`)
+      if (receipt.status !== 'success') throw new Error(`The transaction failed, so nothing changed. Tx: ${hash}`)
       onDone()
     } catch (e) { setErr(e.shortMessage || e.message); setBusy(false); setArm(false) }
   }
@@ -261,7 +261,7 @@ export default function RecordsTab({ owner, index, armoredKey, fingerprint = nul
       <div className="detail-history">
         <div className="mono-box">
           <div className="label">Records</div>
-          <div className="value prose" style={{ color: 'var(--color-text-muted)' }}>Records live on a verified claim. This identity has none yet.</div>
+          <div className="value prose" style={{ color: 'var(--color-text-muted)' }}>Records sit on a verified claim, and this identity has none yet.</div>
         </div>
       </div>
     )
@@ -276,7 +276,7 @@ export default function RecordsTab({ owner, index, armoredKey, fingerprint = nul
           <div className="label">Records</div>
           <div className="value prose" style={{ color: 'var(--color-text-muted)' }}>{canEdit ? 'No records on your claim yet.' : 'No records on this claim.'}</div>
           <div className="proof-docs-footer">
-            <a href={DOCS} target="_blank" rel="noopener noreferrer">what records are</a>
+            <a href={DOCS} target="_blank" rel="noopener noreferrer">about records</a>
           </div>
         </div>
       ) : records.map(r => (

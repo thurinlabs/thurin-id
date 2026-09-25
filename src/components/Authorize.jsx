@@ -8,7 +8,7 @@ import { encodeHandoff } from '../handoff'
 // The empty-wallet exit from a publish step. Instead of a transaction the wallet signs the
 // write as EIP-712 typed data (free), and the result is the same hand-off the CLI makes with
 // `--authorize`: a link anyone can publish, a file for `thurin submit`, or one click to
-// Thurin's relayer. The owner can't recall it before the deadline, so that is said out loud.
+// the Thurin.id relay. The owner can't recall it before the deadline, so that is said out loud.
 
 const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || ''
 const DEADLINES = [{ label: '1 hour', s: 3600 }, { label: '1 day', s: 86400 }, { label: '7 days', s: 7 * 86400 }]
@@ -65,7 +65,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
       setHandoff(h)
       setStatus(null)
     } catch (err) {
-      setStatus({ type: 'err', msg: err.shortMessage || err.message })
+      setStatus({ type: 'err', msg: `Your wallet didn't sign, so nothing was sent.${err.shortMessage ? ` (${err.shortMessage})` : ''}` })
     }
   }
 
@@ -77,14 +77,14 @@ export default function Authorize({ address, op, fields, onPublished }) {
 
   const relay = async () => {
     try {
-      setStatus({ type: 'info', msg: 'Asking Thurin’s relayer to publish…' })
+      setStatus({ type: 'info', msg: 'Asking our relay to publish…' })
       const resp = await fetch(RELAYER_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(handoff) })
       const data = await resp.json().catch(() => ({}))
-      if (!resp.ok) { setStatus({ type: 'err', msg: `The relayer declined: ${data.error || resp.statusText}. The link below still works.` }); return }
-      setStatus({ type: 'ok', msg: '✓ Published by Thurin’s relayer.' })
+      if (!resp.ok) { setStatus({ type: 'err', msg: `The relay declined: ${data.error || resp.statusText}. The link below still works.` }); return }
+      setStatus({ type: 'ok', msg: '✓ Published by our relay.' })
       onPublished && onPublished(data.hash)
     } catch (err) {
-      setStatus({ type: 'err', msg: `Could not reach the relayer: ${err.message}. The link below still works.` })
+      setStatus({ type: 'err', msg: "Couldn't reach the relay. The link below still works." })
     }
   }
 
@@ -92,7 +92,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
     <div className="authorize-box fade-in">
       <div className="label">This address holds no ETH</div>
       <p className="helper">
-        That is fine: sign a permission slip instead of a transaction. It costs nothing, and someone else can publish it for you.
+        Sign a permission instead of a transaction. It costs nothing, and someone else can publish it for you.
         The claim still lands under {shortAddr(address)}.
       </p>
       <div className="row" style={{ marginTop: 8, alignItems: 'center', gap: 8 }}>
@@ -103,7 +103,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
       </div>
       <p className="helper" style={{ marginTop: 8 }}>You can’t take it back before then. After then it does nothing.</p>
       <button className="btn btn-primary" onClick={sign} disabled={!nonceFetched || status?.type === 'info'} style={{ marginTop: 8 }}>
-        {status?.type === 'info' ? 'Waiting for your wallet…' : 'Sign an authorization instead'}
+        {status?.type === 'info' ? 'Waiting for your wallet…' : 'Sign a permission instead'}
       </button>
       {status && <div className={`status ${status.type}`}>{status.msg}</div>}
     </div>
@@ -113,15 +113,15 @@ export default function Authorize({ address, op, fields, onPublished }) {
     <div className="authorize-box signed fade-in">
       <div className="label">Signed. Anyone can publish this until {fmtDate(handoff.authorization.deadline)}</div>
       <p className="helper">
-        Three ways to get it on-chain. Whoever does it pays the fee; the claim is yours either way.
+        {RELAYER_URL ? 'Three' : 'Two'} ways to get it on-chain. Whoever does it pays the fee; the claim is yours either way.
       </p>
       <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
         {RELAYER_URL && (
-          <button className="btn btn-primary" onClick={relay} disabled={status?.type === 'info' || status?.type === 'ok'} title="Thurin’s relayer pays, within its daily budget">
-            {status?.type === 'info' ? 'Publishing…' : 'Have Thurin publish it'}
+          <button className="btn btn-primary" onClick={relay} disabled={status?.type === 'info' || status?.type === 'ok'} title="Our relay pays, within its daily budget">
+            {status?.type === 'info' ? 'Publishing…' : 'Use our relay'}
           </button>
         )}
-        <button className="btn" onClick={copyLink}>{copied ? '✓ copied' : 'Copy link for someone with a wallet'}</button>
+        <button className="btn" onClick={copyLink}>{copied ? 'copied' : 'Copy link for someone with a wallet'}</button>
         <button className="btn btn-sm" onClick={() => copyToFile(handoff)}>Download for thurin submit</button>
       </div>
       <textarea className="pgp-input" readOnly value={link} onFocus={e => e.target.select()} />

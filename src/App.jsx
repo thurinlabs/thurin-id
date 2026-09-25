@@ -239,7 +239,7 @@ function Topbar({ isAttest }) {
         </svg>
         <span className="topbar-wordmark">Thurin<span className="topbar-wordmark-accent">.id</span></span>
         {NETWORK !== 'mainnet' && (
-          <span className="status-badge" title={`Reading the ${NETWORK} registry — nothing here touches mainnet`}
+          <span className="status-badge" title={`Reading the ${NETWORK} registry. Nothing here touches mainnet.`}
             style={{ marginLeft: 10, fontSize: 10, borderColor: 'var(--color-secondary)', color: 'var(--color-secondary)' }}>
             {NETWORK} testnet
           </span>
@@ -248,11 +248,11 @@ function Topbar({ isAttest }) {
       <div className="topbar-right">
         {isAttest ? (
           <a href="/" className="topbar-action-link">
-            Look up an identity
+            Search
           </a>
         ) : (
           <a href="/attest" className="topbar-action-link">
-            Attest
+            Add key
           </a>
         )}
         {/* One wallet switch for the whole site. Visitors never need it; connected, it only
@@ -263,7 +263,7 @@ function Topbar({ isAttest }) {
             {({ account, chain, mounted, openConnectModal, openChainModal, openAccountModal }) => {
               if (!mounted) return null
               if (!account) return <button className="topbar-action-link topbar-connect-btn" onClick={openConnectModal}>Connect</button>
-              if (chain?.unsupported) return <button className="topbar-action-link topbar-connect-btn wrong" onClick={openChainModal} title={`Switch to ${NETWORK}`}>Wrong network</button>
+              if (chain?.unsupported) return <button className="topbar-action-link topbar-connect-btn wrong" onClick={openChainModal} title={`Switch to ${CHAIN.name}`}>Wrong network</button>
               return <AccountMenu label={account.ensName || account.displayName} address={account.address}
                 onIdentity={() => goToIdentity(account)} onWallet={openAccountModal} />
             }}
@@ -372,9 +372,9 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
                     <span className="proof-icon unchecked" title="Not checked: anyone can write any handle into their own key">&#9675;</span>
                   ) : result ? (
                     result.status === 'pending' ? (
-                      <span className="proof-icon pending" title="Checking...">&#8943;</span>
+                      <span className="proof-icon pending" title="Checking…">&#8943;</span>
                     ) : result.status === 'verified' ? (
-                      <span className="proof-icon verified" title="Proof verified: target contains openpgp4fpr token matching this key">&#10003;</span>
+                      <span className="proof-icon verified" title="Checked: the account names this key">&#10003;</span>
                     ) : (
                       <span className="proof-icon unverified" title={result.reason}>&#10007;</span>
                     )
@@ -494,7 +494,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
   const soon = expiresSoon(latest?.verification)
 
   if (isLoading) {
-    return <div className="status info" style={{ marginTop: 24 }}>Querying registry...</div>
+    return <div className="status info" style={{ marginTop: 24 }}>Reading the registry…</div>
   }
 
   if (error) return <ReadFailed error={error} />
@@ -558,7 +558,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
           </div>
           <div className="summary-item">
             <span className="summary-value">{count - activeCount}</span>
-            <span className="summary-key">Revoked</span>
+            <span className="summary-key">Ended</span>
           </div>
         </div>
         {latest && !latest.revoked && (
@@ -667,7 +667,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
                           {a.verification.verified ? 'verified' : rowCheck.label}
                         </span>
                       ) : (
-                        <span className="status-badge" style={{ opacity: 0.4 }}>...</span>
+                        <span className="status-badge" style={{ opacity: 0.4 }}>…</span>
                       )}
                     </td>
                   </tr>
@@ -689,10 +689,10 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, isLoa
 
       {tab !== 'records' && attestations.length === 0 && (
         <div className="status info" style={{ marginTop: 2 }}>
-          No identity claims found for this address.
+          No claims for this address yet.
           <div style={{ marginTop: 8 }}>
             <a href="/attest" className="fingerprint-link">
-              Create an identity claim →
+              Add your key →
             </a>
           </div>
         </div>
@@ -774,6 +774,8 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
               pgpPublicKey,
               timestamp: Number(row.createdAt),
               revoked: Number(row.revokedAt) !== 0,
+              state: row.state,
+              replacedBy: row.state === 'replaced' ? Number(row.replacedBy) : null,
             })
           }
         }
@@ -837,7 +839,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
     claims.every(c => verifications[`${c.address}-${c.index}`] !== undefined)
 
   if (isLoading) {
-    return <div className="status info" style={{ marginTop: 24 }}>Querying registry...</div>
+    return <div className="status info" style={{ marginTop: 24 }}>Reading the registry…</div>
   }
 
   if (error) return <ReadFailed error={error} />
@@ -875,7 +877,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                 <tr>
                   <th>Address</th>
                   <th>Date</th>
-                  <th>Status <span className="info-icon" title="Active: the claim is live on-chain. Revoked: its owner revoked it.">?</span></th>
+                  <th>Status <span className="info-icon" title="Active: the claim counts. Revoked: its owner ended it. Replaced: its owner replaced it with a new claim.">?</span></th>
                   <th>PGP <span className="info-icon" title="Checked now, the way gpg does: the key signed the line naming this address, and the key and the subkey that signed are not revoked or expired. Revoked claims aren't checked.">?</span></th>
                 </tr>
               </thead>
@@ -895,7 +897,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                             {v.verified ? 'verified' : claimCheckText(v).label}
                           </span>
                         ) : (
-                          <span className="status-badge" style={{ opacity: 0.4 }}>...</span>
+                          <span className="status-badge" style={{ opacity: 0.4 }}>…</span>
                         )}
                       </td>
                     </tr>
@@ -907,7 +909,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                     <tr key={key} style={{ opacity: 0.5 }}>
                       <td><ClaimAddressCell address={claim.address} /></td>
                       <td className="att-date">{formatDate(claim.timestamp)}</td>
-                      <td><span className="status-badge revoked">revoked</span></td>
+                      <td><span className="status-badge revoked">{claim.state === 'replaced' ? `replaced → #${claim.replacedBy}` : 'revoked'}</span></td>
                       <td></td>
                     </tr>
                   )
@@ -917,10 +919,10 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
           </div>
         ) : (
           <div className="status info" style={{ marginTop: 0 }}>
-            No active claims found for this fingerprint.
+            No active claim for this fingerprint.
             <div style={{ marginTop: 8 }}>
               <a href="/attest" className="fingerprint-link">
-                Create an identity claim →
+                Add your key →
               </a>
             </div>
           </div>
@@ -938,7 +940,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
             <div className="value" style={{ color: 'var(--color-text-muted)' }}>
               {!verificationsReady
                 ? 'Verifying signatures…'
-                : 'No verified claim for this fingerprint — key data not shown.'}
+                : "No verified claim for this fingerprint, so key data isn't shown."}
             </div>
             <div className="proof-docs-footer">
               <a href="https://docs.thurin.id/#/guides/proofs" target="_blank" rel="noopener noreferrer">how proofs work</a>
@@ -992,7 +994,7 @@ function Explorer() {
     const keyId = keyIdToBytes(submitted.value)
     ;(async () => {
       try {
-        if (!keyId) throw new Error('Not a valid key ID')
+        if (!keyId) throw new Error("That isn't a key ID: 16 hex characters.")
         const fps = await chainClient.readContract({
           address: REGISTRY_ADDRESS,
           abi: REGISTRY_ABI,
@@ -1000,7 +1002,7 @@ function Explorer() {
           args: [keyId],
         })
         if (cancelled) return
-        if (fps.length === 0) throw new Error('No attestation in the registry for this key ID')
+        if (fps.length === 0) throw new Error('No claim uses this key ID.')
         const fullFingerprint = bytesToFingerprint(fps[0]).toUpperCase()
         setQuery(fullFingerprint)
         setSubmitted({ type: 'fingerprint', value: fullFingerprint })
@@ -1008,7 +1010,8 @@ function Explorer() {
         setKeyIdResolving(false)
       } catch (err) {
         if (cancelled) return
-        setKeyIdError(err.message)
+        // Our own sentences as they are; a failed chain read gets a plain one.
+        setKeyIdError(/^(That isn't|No claim)/.test(err.message) ? err.message : "Couldn't read the registry. Try again, or change the RPC below.")
         setKeyIdResolving(false)
       }
     })()
@@ -1251,13 +1254,13 @@ function Explorer() {
             onClick={handleLookup}
             disabled={!inputType}
           >
-            Lookup
+            Search
           </button>
         </div>
 
         {query.trim() && !inputType && (
           <div className="status info" style={{ marginTop: 12 }}>
-            Enter a valid ETH address (0x, 42 chars), ENS name (e.g. vitalik.eth), PGP fingerprint (40 hex chars), or key ID (16 hex chars).
+            Enter an ENS name, an Ethereum address (0x + 40 hex), a PGP fingerprint (40 hex), or a key ID (16 hex).
           </div>
         )}
 
@@ -1301,19 +1304,19 @@ function Explorer() {
           <section className="home-rules">
             <div className="home-rule">
               <h3>Nothing in the middle.</h3>
-              <p>There is no Thurin server holding your identity. It lives on Ethereum, a public record no company controls, and your browser checks it directly.</p>
+              <p>No Thurin Labs server holds your identity. It lives on Ethereum, a public record no company controls, and your browser checks it directly.</p>
             </div>
             <div className="home-rule">
               <h3>Your PGP key stays put.</h3>
-              <p>It is published on-chain where you put it, so it can’t be swapped, lost, or quietly changed. gpg, git, and your mail client can fetch it from keys.thurin.id.</p>
+              <p>It is published on-chain where you put it, so no one can swap it or change it behind your back. gpg, git, and your mail client can fetch it from keys.thurin.id.</p>
             </div>
             <div className="home-rule">
               <h3>Your email stays private.</h3>
-              <p>Nothing about you goes public unless you choose it. Publish a name, not a life.</p>
+              <p>Emails stay off your key and out of your signature unless you choose to include them. Nothing about you goes public that you didn't put there.</p>
             </div>
           </section>
           <section className="home-close">
-            <p>Want your own? <a href="/attest">Attest</a> takes a few minutes and one transaction.</p>
+            <p>Want your own? <a href="/attest">Adding your key</a> takes a few minutes and one transaction.</p>
             <a className="home-roadmap" href={`${links.docs}/#/roadmap`} target="_blank" rel="noopener noreferrer">What’s coming: the roadmap →</a>
           </section>
         </>
@@ -1323,12 +1326,12 @@ function Explorer() {
         {/* Key ID resolving */}
         {keyIdResolving && (
           <div className="status info" style={{ marginTop: 24 }}>
-            Resolving key ID {submitted?.value}...
+            Looking up key ID {submitted?.value}…
           </div>
         )}
         {keyIdError && (
           <div className="status err" style={{ marginTop: 24 }}>
-            Could not resolve key ID: {keyIdError}
+            {keyIdError}
           </div>
         )}
 
@@ -1357,10 +1360,10 @@ function Explorer() {
             </div>
             <div className="result-card-body">
               <div className="status info">
-                The PGPRegistry contract is not yet deployed. Once deployed to Sepolia, lookups will query on-chain data.
+                No registry is set for this build, so there's nothing to look up.
                 <div style={{ marginTop: 8 }}>
                   <a href="/attest" className="fingerprint-link">
-                    Create an identity claim →
+                    Add your key →
                   </a>
                 </div>
               </div>
@@ -1418,7 +1421,7 @@ function Explorer() {
         {/* Loading (contract reads) */}
         {!noContract && isLoading && submitted && !ensLoading && (
           <div className="status info" style={{ marginTop: 24 }}>
-            Querying registry...
+            Reading the registry…
           </div>
         )}
       </div>
@@ -1444,7 +1447,7 @@ export default function App() {
 
       <footer className="footer">
         <div className="footer-left">
-          <span className="footer-version">thurin v{version}</span>
+          <span className="footer-version">Thurin.id v{version}</span>
           <RpcSetting />
           <ProofSetting />
         </div>
@@ -1452,7 +1455,7 @@ export default function App() {
           <div className="footer-col">
             <span className="footer-col-label">Home</span>
             <a href={links.company} target="_blank" rel="noopener noreferrer">Thurin Labs</a>
-            <a href="/attest">Attest</a>
+            <a href="/attest">Add key</a>
             <a href={links.privacy} target="_blank" rel="noopener noreferrer">Privacy</a>
           </div>
           <div className="footer-col">

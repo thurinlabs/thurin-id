@@ -1,6 +1,6 @@
 // What the page calls each Thurin record kind. Other names show as they are.
 export const KIND_LABEL = {
-  'thurin.railgun': 'Pay privately',
+  'thurin.railgun': 'Private payments',
   'thurin.security': 'Security contact',
   'thurin.successor': 'Successor key',
   'thurin.affiliation': 'Affiliation',

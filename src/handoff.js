@@ -63,27 +63,27 @@ export function readHandoff() {
     h = JSON.parse(new TextDecoder().decode(bytesFromBase64Url(json)))
     if (h && keyPart) h.key = payloadValue(bytesFromBase64Url(keyPart))
     if (h && sigPart) h.signature = payloadValue(bytesFromBase64Url(sigPart))
-  } catch { throw new Error('This link is damaged: the hand-off could not be read.') }
-  if (h?.v !== 2) throw new Error(`This link uses hand-off format ${h?.v ?? '?'}; this page reads format 2. Update the CLI or the page.`)
-  if (!OPS.includes(h.op)) throw new Error(`Unknown hand-off operation "${h.op}".`)
-  if (!/^0x[0-9a-f]{40}$/.test(h.owner || '')) throw new Error('The hand-off has no valid owner address.')
-  if (!/^[0-9A-F]{40}$/.test(h.fingerprint || '')) throw new Error('The hand-off has no valid fingerprint.')
+  } catch { throw new Error('This link is damaged. Copy the whole link again from the terminal.') }
+  if (h?.v !== 2) throw new Error('This link is from an older version. Make a new one with an up-to-date CLI.')
+  if (!OPS.includes(h.op)) throw new Error("This page doesn't know what this link asks for. Update the CLI, or open the link on the latest thurin.id.")
+  if (!/^0x[0-9a-f]{40}$/.test(h.owner || '')) throw new Error('This link has no valid owner. Make a new one with the CLI.')
+  if (!/^[0-9A-F]{40}$/.test(h.fingerprint || '')) throw new Error('This link names no valid key. Make a new one with the CLI.')
   const needsKey = h.op === 'attest' || h.op === 'reattest' || h.op === 'update-key', needsSig = h.op === 'attest' || h.op === 'reattest'
-  if (h.op === 'set-record' && (typeof h.kind !== 'string' || typeof h.value !== 'string')) throw new Error('The hand-off names no record.')
-  if (needsKey && !isKeyHex(h.key)) throw new Error('The hand-off carries no public key.')
-  if (needsSig && !isSignature(h.signature)) throw new Error('The hand-off carries no signature.')
+  if (h.op === 'set-record' && (typeof h.kind !== 'string' || typeof h.value !== 'string')) throw new Error('This link names no record. Make a new one with the CLI.')
+  if (needsKey && !isKeyHex(h.key)) throw new Error('This link carries no key. Make a new one with the CLI.')
+  if (needsSig && !isSignature(h.signature)) throw new Error('This link carries no signature. Make a new one with the CLI.')
   if (h.reason != null && !REASONS.includes(h.reason)) throw new Error(`Unknown revoke reason "${h.reason}".`)
-  if (h.keepRecords != null && typeof h.keepRecords !== 'boolean') throw new Error('The hand-off has an invalid keepRecords.')
+  if (h.keepRecords != null && typeof h.keepRecords !== 'boolean') throw new Error('This link is damaged. Make a new one with the CLI.')
   if (h.op !== 'attest' && !Number.isInteger(h.index)) throw new Error('The hand-off names no claim index.')
   let authorization = null
   if (h.authorization != null) {
     const a = h.authorization
-    if (!Number.isInteger(a.nonce) || a.nonce < 0) throw new Error('The authorization has no valid nonce.')
-    if (!Number.isInteger(a.deadline) || a.deadline <= 0) throw new Error('The authorization has no valid deadline.')
-    if (!/^0x[0-9a-f]{130}$/i.test(a.signature || '')) throw new Error('The authorization has no valid signature.')
+    if (!Number.isInteger(a.nonce) || a.nonce < 0) throw new Error("This link's permission is damaged. Make a new one with the CLI.")
+    if (!Number.isInteger(a.deadline) || a.deadline <= 0) throw new Error("This link's permission is damaged. Make a new one with the CLI.")
+    if (!/^0x[0-9a-f]{130}$/i.test(a.signature || '')) throw new Error("This link's permission is damaged. Make a new one with the CLI.")
     authorization = { nonce: a.nonce, deadline: a.deadline, signature: a.signature }
   }
-  if ((h.op === 'revoke' || h.op === 'mark-compromised') && !authorization) throw new Error('A revoke hand-off needs an authorization; revoke your own claim under Your claims.')
+  if ((h.op === 'revoke' || h.op === 'mark-compromised') && !authorization) throw new Error('A revoke link needs a signed permission. To revoke your own claim, use Your claims on this page.')
   return {
     op: h.op, network: String(h.network || 'mainnet'), owner: h.owner, fingerprint: h.fingerprint,
     key: h.key ?? null, signature: h.signature ?? null, index: h.index ?? null, includeEmail: !!h.includeEmail,

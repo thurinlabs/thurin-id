@@ -7,6 +7,7 @@ import {
   attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, markCompromisedTypedData,
 } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
+import { kindLabel } from '../recordLabels'
 
 // Publish someone else's authorized write. The owner signed the typed data in the CLI
 // (`thurin attest --authorize`); this panel rebuilds that typed data from the hand-off,
@@ -16,6 +17,16 @@ import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK }
 // A relayer (`thurin relay`) that pays on the viewer's behalf. Unset = no button; the
 // viewer's own wallet is always the other path.
 const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || ''
+
+// What happened, once published, in the words of each operation.
+const DONE = {
+  attest: (h) => `Published. The claim is under ${shortAddr(h.owner)}, and anyone can check it.`,
+  reattest: (h) => `Published. Claim #${h.index} is replaced; the new claim is under ${shortAddr(h.owner)}.`,
+  'update-key': (h) => `Published. Claim #${h.index} of ${shortAddr(h.owner)} has the new key.`,
+  revoke: (h) => `Revoked. Claim #${h.index} of ${shortAddr(h.owner)} no longer counts.`,
+  'set-record': (h) => `Published. The record is ${h.value ? 'set' : 'cleared'} on claim #${h.index}.`,
+  'mark-compromised': (h) => `Marked. Claim #${h.index}'s key is marked compromised for ${shortAddr(h.owner)}.`,
+}
 
 const VERBS = { attest: 'Publish a claim', reattest: 'Replace a claim', 'update-key': 'Update a key', revoke: 'Revoke a claim', 'set-record': 'Set a record', 'mark-compromised': 'Mark a key compromised' }
 const FNS = { attest: 'attestFor', reattest: 'reattestFor', 'update-key': 'updateKeyFor', revoke: 'revokeFor', 'set-record': 'setRecordFor', 'mark-compromised': 'markCompromisedFor' }
@@ -97,20 +108,20 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
       let names = [], proofs = 0, bytes = 0, signer = null
       try {
         signer = await recoverTypedDataAddress({ ...typedDataFor(h), signature: h.authorization.signature })
-        if (signer.toLowerCase() !== h.owner) problems.push(`The authorization was not signed by ${shortAddr(h.owner)} (it recovers to ${shortAddr(signer)}), so something in this link was changed.`)
+        if (signer.toLowerCase() !== h.owner) problems.push(`This permission wasn't signed by ${shortAddr(h.owner)} (it was signed by ${shortAddr(signer)}), so something in the link was changed. Ask for a new link.`)
       } catch (e) {
-        problems.push(`The authorization signature could not be checked: ${e.message}`)
+        problems.push("This permission's signature couldn't be checked. Ask for a new link.")
       }
       if (chainNonce !== undefined && Number(chainNonce) !== h.authorization.nonce) {
         problems.push(Number(chainNonce) > h.authorization.nonce
-          ? 'This authorization was already used, or the owner has published something since signing it. Ask them for a new one.'
-          : 'The nonce in this authorization is ahead of the chain; it cannot be submitted yet.')
+          ? 'This permission was already used, or the owner has published something since signing it. Ask them for a new one.'
+          : 'An earlier permission from this owner isn\'t published yet. Publish that one first.')
       }
       if (claimsKey && keyStatus === 'compromised') problems.push(`${shortAddr(h.owner)} revoked this key as compromised, so the registry won't take a new claim on it.`)
-      if (!timeLeft(h.authorization.deadline)) problems.push(`This authorization expired on ${fmtDate(h.authorization.deadline)}. Ask ${shortAddr(h.owner)} for a new one.`)
+      if (!timeLeft(h.authorization.deadline)) problems.push(`This permission expired on ${fmtDate(h.authorization.deadline)}. Ask ${shortAddr(h.owner)} for a new one.`)
       if (h.key) {
         const info = await parsePgpKey(h.key)
-        if (!info) problems.push('The key in this link does not parse.')
+        if (!info) problems.push("The key in this link can't be read. Ask for a new link.")
         else {
           if (info.fingerprint.toUpperCase() !== h.fingerprint) problems.push('The key in this link is not the key it names.')
           names = info.userIDs; proofs = info.notations.filter(n => identifyProof(n)).length
@@ -135,7 +146,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
 
   const handleRelay = async () => {
     try {
-      setStatus({ type: 'info', msg: 'Asking the relayer to publish…' })
+      setStatus({ type: 'info', msg: 'Asking our relay to publish…' })
       const body = { v: 2, op: h.op, network: NETWORK, owner: h.owner, fingerprint: h.fingerprint, includeEmail: h.includeEmail,
         ...(h.key ? { key: h.key } : {}), ...(h.signature ? { signature: h.signature } : {}), ...(h.index !== null ? { index: h.index } : {}),
         ...(h.op === 'reattest' ? { keepRecords: h.keepRecords } : {}), ...(h.op === 'revoke' ? { reason: h.reason } : {}),
@@ -143,11 +154,11 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
         authorization: h.authorization }
       const resp = await fetch(RELAYER_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       const data = await resp.json().catch(() => ({}))
-      if (!resp.ok) { setStatus({ type: 'err', msg: `The relayer declined: ${data.error || resp.statusText}. You can still publish from your own wallet.` }); return }
+      if (!resp.ok) { setStatus({ type: 'err', msg: `The relay declined: ${data.error || resp.statusText}. You can still publish from your own wallet.` }); return }
       setTxHash(data.hash)
-      setStatus({ type: 'ok', msg: '✓ Published by the relayer.' }); setDone(true); refetchNonce()
+      setStatus({ type: 'ok', msg: '✓ Published by our relay.' }); setDone(true); refetchNonce()
     } catch (err) {
-      setStatus({ type: 'err', msg: `Could not reach the relayer: ${err.message}. You can still publish from your own wallet.` })
+      setStatus({ type: 'err', msg: "Couldn't reach the relay. You can still publish from your own wallet." })
     }
   }
 
@@ -160,7 +171,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
       const client = createPublicClient({ chain: CHAIN, transport: http(RPC_URL) })
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
       if (receipt.status === 'success') { setStatus({ type: 'ok', msg: '✓ Published.' }); setDone(true); refetchNonce() }
-      else setStatus({ type: 'err', msg: `Transaction reverted. Tx: ${hash}` })
+      else setStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
     } catch (err) {
       setStatus({ type: 'err', msg: err.shortMessage || err.message })
     }
@@ -179,7 +190,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
 
       {done ? (
         <div className="fade-in">
-          <div className="status ok">Published. The claim is under {shortAddr(h.owner)}, and anyone can check it.</div>
+          <div className="status ok">{DONE[h.op](h)}</div>
           <div style={{ marginTop: 16 }} className="row">
             <a href={`/eth/${h.owner}`} className="btn btn-primary" target="_blank" rel="noopener noreferrer">View identity</a>
             {txHash && EXPLORER_URL && <a href={`${EXPLORER_URL}/tx/${txHash}`} className="btn" target="_blank" rel="noopener noreferrer">View transaction</a>}
@@ -194,7 +205,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
             {h.index !== null && <div className="value">{h.op === 'reattest' ? 'Replaces' : h.op === 'revoke' ? 'Revokes' : h.op === 'set-record' ? 'On' : h.op === 'mark-compromised' ? 'Marks the key compromised on' : 'Updates'} claim #{h.index}{targetFpr ? ` (${targetFpr.slice(0, 8)}…${targetFpr.slice(-8)})` : ''}</div>}
             {h.op === 'set-record' && (
               <>
-                <div className="value">Record: {h.kind}</div>
+                <div className="value">Record: {kindLabel(h.kind)}</div>
                 <pre className="value" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{h.value ? prettyRecord(h.kind, h.value) : '(clear)'}</pre>
               </>
             )}
@@ -206,20 +217,20 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
               </>
             )}
             <div className="value" style={{ color: 'var(--color-text-muted)' }}>
-              Signed by the owner · nonce {h.authorization.nonce} · {left ? `expires in ${left} (${fmtDate(h.authorization.deadline)})` : `expired ${fmtDate(h.authorization.deadline)}`}
+              Signed by the owner · {left ? `expires in ${left} (${fmtDate(h.authorization.deadline)})` : `expired ${fmtDate(h.authorization.deadline)}`}
             </div>
           </div>
 
-          {!check && <div className="status info">Checking the authorization against the chain…</div>}
+          {!check && <div className="status info">Checking the permission against the chain…</div>}
           {check && check.problems.map((p, i) => <div key={i} className="status err">{p}</div>)}
           {check?.ok && (
             <div className="status ok">
-              ✓ Authorization signed by {shortAddr(h.owner)}{h.signature ? ' · PGP signature verified' : ''} · nonce matches the chain
+              ✓ Signed by {shortAddr(h.owner)}{h.signature ? ' · PGP signature verified' : ''} · not used yet
             </div>
           )}
 
           <p className="helper" style={{ marginTop: 12 }}>
-            Your wallet pays the fee; the claim lands under {shortAddr(h.owner)}, not you. The owner can't recall this
+            Your wallet pays the fee{h.op === 'attest' || h.op === 'reattest' ? <>; the claim lands under {shortAddr(h.owner)}, not you</> : ''}. The owner can't recall this
             link before it expires, and it can be used once.
           </p>
 
@@ -228,13 +239,13 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
               {status?.type === 'info' ? 'Publishing…' : `Publish for ${shortAddr(h.owner)}`}
             </button>
             {RELAYER_URL && (
-              <button className="btn" onClick={handleRelay} disabled={!check?.ok || status?.type === 'info'} title="Thurin's relayer pays the fee, within its daily budget">
-                Have Thurin publish it
+              <button className="btn" onClick={handleRelay} disabled={!check?.ok || status?.type === 'info'} title="The Thurin.id relay pays the fee, within its daily budget">
+                Use our relay
               </button>
             )}
           </div>
           {RELAYER_URL && !isConnected && check?.ok && (
-            <p className="helper" style={{ marginTop: 8 }}>No wallet? "Have Thurin publish it" pays the fee from Thurin's relayer, within its daily budget.</p>
+            <p className="helper" style={{ marginTop: 8 }}>No wallet? "Use our relay" pays the fee, within its daily budget.</p>
           )}
 
           {status && <div className={`status ${status.type}`}>{status.msg}</div>}

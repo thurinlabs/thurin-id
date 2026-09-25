@@ -59,7 +59,7 @@ export default function EnsRecordLine({ ensName, fingerprint }) {
       setStatus({ type: 'info', msg: `Waiting for confirmation… tx: ${hash.slice(0, 10)}…` })
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
       if (receipt.status === 'success') { setStatus({ type: 'ok', msg: '✓ Record set.', hash }); hint.refetch() }
-      else setStatus({ type: 'err', msg: `Transaction reverted. Tx: ${hash}` })
+      else setStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
     } catch (err) {
       setStatus({ type: 'err', msg: err.shortMessage || err.message })
     }

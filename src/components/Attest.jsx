@@ -23,7 +23,7 @@ function copyToClipboard(text, e) {
   if (e?.target) {
     const btn = e.target
     const original = btn.textContent
-    btn.textContent = 'copied!'
+    btn.textContent = 'copied'
     btn.classList.add('copied')
     setTimeout(() => {
       btn.textContent = original
@@ -92,12 +92,12 @@ function StepConnect({ active, done }) {
     <div className={`step ${active ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
         <span className={`step-num ${active ? 'active-num' : ''}`}>01 //</span>
-        <span className="step-title">Connect Wallet</span>
-        {done && <span className="step-badge">✓ complete</span>}
+        <span className="step-title">Connect your wallet</span>
+        {done && <span className="step-badge">✓ connected</span>}
       </div>
 
       {!isConnected && (
-        <p className="helper">Connect your wallet to get started. The claim is published from this address, so it has to be yours. Already have a claim? <a href="/" rel="noopener noreferrer">Look it up</a>.</p>
+        <p className="helper">Connect the wallet whose address gets the key. Already have a claim? <a href="/" rel="noopener noreferrer">Search for it</a>.</p>
       )}
 
       <ConnectButton showBalance={false} />
@@ -508,10 +508,10 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
 
       if (receipt.status === 'success') {
-        setPublishStatus({ type: 'ok', msg: `✓ Attested on-chain.` })
+        setPublishStatus({ type: 'ok', msg: '✓ Published.' })
         onPublish && onPublish()
       } else {
-        setPublishStatus({ type: 'err', msg: `Transaction reverted. Tx: ${hash}` })
+        setPublishStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
       }
     } catch (err) {
       setPublishStatus({ type: 'err', msg: err.shortMessage || err.message })
@@ -577,7 +577,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
                 <option value="">No — add alongside my active claims</option>
                 {activeClaims.map(c => (
                   <option key={c.index} value={String(c.index)}>
-                    Yes — revoke #{c.index} ({c.fingerprint.toUpperCase().slice(0, 8)}…{c.fingerprint.toUpperCase().slice(-8)}) in the same transaction
+                    Yes, replace #{c.index} ({c.fingerprint.toUpperCase().slice(0, 8)}…{c.fingerprint.toUpperCase().slice(-8)}) in the same transaction
                   </option>
                 ))}
               </select>
@@ -595,7 +595,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
               )}
               {activeClaims.some(c => c.fingerprint === attestation.gpgFingerprint.toLowerCase()) && (replaceIndex === null || replaceIndex === undefined) && (
                 <div className="status err" style={{ marginTop: 8 }}>
-                  This key already has an active claim. Pick it above to replace it — the registry allows one active claim per key.
+                  This key already has an active claim. Pick it above to replace it: one active claim per key.
                 </div>
               )}
             </div>
@@ -611,7 +611,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
           )}
 
           <button className="btn btn-primary" onClick={handlePublish} disabled={publishStatus?.type === 'info' || empty || keyCompromised} title={empty ? 'This address has no ETH for the fee' : keyCompromised ? 'This key was revoked as compromised' : undefined}>
-            {publishStatus?.type === 'info' ? 'Publishing…' : (replacing ? 'Replace & Publish' : 'Publish to Registry')}
+            {publishStatus?.type === 'info' ? 'Publishing…' : (replacing ? 'Replace and publish' : 'Publish')}
           </button>
 
           {publishStatus && <div className={`status ${publishStatus.type}`}>{publishStatus.msg}</div>}
@@ -621,7 +621,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
               address={attestation.ethAddress}
               op={replacing ? 'reattest' : 'attest'}
               fields={{ fingerprint: attestation.gpgFingerprint, key: attestation.gpgPublicKeyHex, signature: attestation.gpgSignatureHex, index: replacing ? replaceIndex : undefined, includeEmail: (attestation.gpgMeta?.userIDs || []).some(u => u.includes('@')) }}
-              onPublished={hash => { setTxHash(hash); setPublishStatus({ type: 'ok', msg: '✓ Attested on-chain.' }); onPublish && onPublish() }}
+              onPublished={hash => { setTxHash(hash); setPublishStatus({ type: 'ok', msg: '✓ Published.' }); onPublish && onPublish() }}
             />
           )}
         </div>
@@ -713,7 +713,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
     ;(async () => {
       const info = await parsePgpKey(text)
       if (cancelled) return
-      if (!info) { setStatus({ type: 'err', msg: 'That is not a PGP public key.' }); return }
+      if (!info) { setStatus({ type: 'err', msg: "That isn't a PGP public key. Paste the whole output of the command above." }); return }
       if (info.fingerprint.toLowerCase() !== claim.fingerprint) {
         setStatus({ type: 'err', msg: `That key's fingerprint (${info.fingerprint}) is not this claim's key.` })
         return
@@ -737,7 +737,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
 
   const handleUpdate = async () => {
     if (!preview) return
-    if (preview.bytes > MAX_PUBKEY_BYTES) { setStatus({ type: 'err', msg: `Key is ${(preview.bytes / 1024).toFixed(1)} KB; the registry accepts up to ${MAX_PUBKEY_BYTES / 1024} KB. Export a minimal key (gpg --export-options export-minimal).` }); return }
+    if (preview.bytes > MAX_PUBKEY_BYTES) { setStatus({ type: 'err', msg: `The key is ${(preview.bytes / 1024).toFixed(1)} KB, over the ${MAX_PUBKEY_BYTES / 1024} KB limit. It likely has many signatures or subkeys on it.` }); return }
     try {
       setStatus({ type: 'info', msg: 'Sending transaction…' })
       const hash = await writeContractAsync({
@@ -755,7 +755,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
         setResult({ hash, proofs: preview.proofs, kept: preview.kept })
         onDone && onDone()
       } else {
-        setStatus({ type: 'err', msg: `Transaction reverted. Tx: ${hash}` })
+        setStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
       }
     } catch (err) {
       setStatus({ type: 'err', msg: err.shortMessage || err.message })
@@ -878,7 +878,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
   const handleRevoke = async (index, reason) => {
     try {
       setConfirmRevoke(null)
-      setRevokeStatus(s => ({ ...s, [index]: { type: 'info', msg: 'Sending revoke…' } }))
+      setRevokeStatus(s => ({ ...s, [index]: { type: 'info', msg: 'Sending transaction…' } }))
 
       const hash = await writeContractAsync({
         address: REGISTRY_ADDRESS,
@@ -958,7 +958,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                         className="btn btn-sm"
                         onClick={() => setConfirmRevoke(confirmRevoke === a.index ? null : a.index)}
                         disabled={revokeStatus[a.index]?.type === 'info' || attestations.some(o => !o.revoked && o.fingerprint === a.fingerprint)}
-                        title={attestations.some(o => !o.revoked && o.fingerprint === a.fingerprint) ? 'This key has an active claim here; revoke that one as compromised' : 'Found out this key was compromised'}
+                        title={attestations.some(o => !o.revoked && o.fingerprint === a.fingerprint) ? 'This key has an active claim here; revoke that one as compromised' : 'For a key you later find was stolen'}
                       >
                         {revokeStatus[a.index]?.type === 'info' ? 'Marking…' : 'Mark compromised'}
                       </button>
@@ -971,7 +971,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                   <td colSpan={5} style={{ padding: '0 16px 10px' }}>
                     {!a.revoked && emailByIndex[a.index] && (
                       <div className="lookup-detected" style={{ fontSize: '12px', margin: 0 }}
-                        title="The key stored on this claim carries an email user ID. Update the key with 'Keep my email off-chain' to publish a copy without it; the old copy stays in chain history.">
+                        title="The key stored on this claim carries an email user ID. Update the key with 'Include my email' unticked to publish a copy without it; the old copy stays in chain history.">
                         Email included on this claim
                       </div>
                     )}
@@ -1118,15 +1118,15 @@ export default function Attest() {
         ) : authorized ? (
           <p className="helper" style={{ marginBottom: 24 }}>
             This link came from the Thurin CLI. <strong>{shortAddr(authorized.owner)}</strong> has already signed
-            {authorized.op === 'attest' ? ' a claim' : authorized.op === 'reattest' ? ' a replacement claim' : authorized.op === 'update-key' ? ' a key update' : ' a revocation'},
+            {{ attest: ' a claim', reattest: ' a replacement claim', 'update-key': ' a key update', revoke: ' a revocation', 'set-record': ' a record', 'mark-compromised': ' a compromised mark' }[authorized.op]},
             so any wallet can publish it and pay the fee. Connect yours, check what it says, and publish.
             Nothing was sent anywhere; the part of the link after <code>#</code> stays in this browser.
           </p>
         ) : handoff ? (
           <>
             <p className="helper">
-              This link came from the Thurin CLI. It carries {handoff.op === 'update-key' ? 'an updated key for claim' : 'a signed claim for'}{' '}
-              {handoff.op === 'update-key' ? `#${handoff.index} of ` : ''}<strong>{shortAddr(handoff.owner)}</strong>: the wallet that has to publish it.
+              This link came from the Thurin CLI. It carries {handoff.op === 'update-key' ? 'an updated key for claim' : handoff.op === 'set-record' ? 'a record for claim' : 'a signed claim for'}{' '}
+              {handoff.op === 'update-key' || handoff.op === 'set-record' ? `#${handoff.index} of ` : ''}<strong>{shortAddr(handoff.owner)}</strong>: the wallet that has to publish it.
               Nothing was sent anywhere; the part of the link after <code>#</code> stays in this browser.
             </p>
             <p className="helper" style={{ marginBottom: 24 }}>
@@ -1135,7 +1135,7 @@ export default function Attest() {
             </p>
             {wrongWallet && (
               <div className="status err" style={{ marginBottom: 24 }}>
-                Connected as <strong>{shortAddr(address)}</strong>, but this claim was signed for <strong>{shortAddr(handoff.owner)}</strong>.
+                Connected as <strong>{shortAddr(address)}</strong>, but this link is for <strong>{shortAddr(handoff.owner)}</strong>.
                 Switch to that account in your wallet.
               </div>
             )}
@@ -1217,7 +1217,7 @@ export default function Attest() {
 
       {!handoff && (
         <p className="helper attest-cli">
-          Rather use a terminal? The Thurin CLI does this and more:<br />
+          Rather use a terminal? The CLI does the same:<br />
           <code>npx @thurinlabs/thurin attest</code> · <a href="https://docs.thurin.id/#/cli" target="_blank" rel="noopener noreferrer">docs</a>
         </p>
       )}
