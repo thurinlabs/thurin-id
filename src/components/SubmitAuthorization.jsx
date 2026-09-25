@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { forgetHandoff } from '../handoff'
 import { useWriteContract, useReadContract } from 'wagmi'
 import { createPublicClient, http, stringToHex, recoverTypedDataAddress } from 'viem'
 import {
@@ -71,6 +72,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
   const [status, setStatus] = useState(null)
   const [txHash, setTxHash] = useState(null)
   const [done, setDone] = useState(false)
+  useEffect(() => { if (done) forgetHandoff() }, [done])   // a used link is dropped from this tab
   const { writeContractAsync } = useWriteContract()
 
   const { data: chainNonce, isFetched: nonceFetched, refetch: refetchNonce } = useReadContract({

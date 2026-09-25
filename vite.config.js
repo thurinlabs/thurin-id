@@ -55,6 +55,9 @@ const commitMeta = {
 export default defineConfig(({ mode }) => ({
   plugins: [react(), csp(mode), commitMeta],
   base: './',
+  // Card images come from thurin-og behind the same host; THURIN_OG=http://127.0.0.1:3333 points
+  // the dev server at a local one.
+  server: process.env.THURIN_OG ? { proxy: { '/card': process.env.THURIN_OG, '/og': process.env.THURIN_OG } } : undefined,
   define: {
     global: 'globalThis',
   },

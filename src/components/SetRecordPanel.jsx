@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { forgetHandoff } from '../handoff'
 import { useWriteContract } from 'wagmi'
 import { createPublicClient, http } from 'viem'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL } from '../wagmiConfig'
@@ -18,6 +19,7 @@ export default function SetRecordPanel({ handoff: h, isConnected }) {
   const [status, setStatus] = useState(null)
   const [txHash, setTxHash] = useState(null)
   const [done, setDone] = useState(false)
+  useEffect(() => { if (done) forgetHandoff() }, [done])   // a used link is dropped from this tab
   const { writeContractAsync } = useWriteContract()
 
   const publish = async () => {

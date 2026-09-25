@@ -5,9 +5,9 @@ import * as openpgp from 'openpgp'
 import { createPublicClient, http, toHex, encodeFunctionData } from 'viem'
 import { payloadText, asArmor } from '../payload'
 import { kindLabel } from '../recordLabels'
-import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyAttestation, verifyStatementSignature, leanKey, claimSignature } from '@thurinlabs/identity-kit'
+import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyAttestation, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
-import { readHandoff } from '../handoff'
+import { readHandoff, forgetHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
 import Authorize, { useIsEmpty } from './Authorize'
 import SetRecordPanel from './SetRecordPanel'
@@ -57,7 +57,7 @@ function gpgPayload(address) {
   return `I control the Ethereum address: ${address.toLowerCase()}`
 }
 
-// Must match PGPRegistry.MAX_KEY_BYTES (8 KB). The on-chain key only needs to
+// Must match PGPRegistry.MAX_KEY_BYTES (16 KB). The on-chain key only needs to
 // verify the attestation signature and carry the proof notations, so a minimal
 // export stays well under this — and every byte costs gas.
 const MAX_PUBKEY_BYTES = 16384
@@ -72,7 +72,7 @@ const EXPORT_OPTIONS = 'export-minimal,no-export-attributes'
 // without SSH-only subkeys. Emails stay in the export so "Include my email" works without
 // re-running; the page leaves them out otherwise.
 function signCommand(address, key) {
-  const sign = `printf '%s' "${gpgPayload(address)}" | gpg --detach-sign --textmode --armor`
+  const sign = `printf '%s' "${gpgPayload(address)}" | gpg --detach-sign --textmode --disable-signer-uid --armor`
   const exp = `gpg --export-options ${EXPORT_OPTIONS} --export-filter drop-subkey='usage = a' --armor --export`
   return key
     ? `${sign} -u "${key}"; ${exp} "${key}"`
@@ -207,12 +207,25 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         return
       }
       setNeedsName(false)
+      if (lean.keyNotationEmails.length) {
+        setPreview(null); onVerified(null)
+        setStatus({ type: 'err', msg: `A notation on the key itself holds an email (${lean.keyNotationEmails.join(', ')}), and it would go on-chain for good. Remove it with gpg (gpg --edit-key, then notation), export again and paste, or tick "Include my email".` })
+        return
+      }
       const claimSig = await claimSignature({ signature: verified.sig, key: lean.binary, address })
       if (cancelled) return
       const sigBytes = claimSig?.signature
       if (!sigBytes) {
         setPreview(null); onVerified(null)
         setStatus({ type: 'err', msg: "Couldn't read the signature. Run the command again and paste all of its output." })
+        return
+      }
+      // gpg writes the email into the signature when told the key by email or name; the signature is kept on-chain.
+      const signedEmail = await signatureEmail(verified.sig)
+      if (cancelled) return
+      if (signedEmail && !includeEmail) {
+        setPreview(null); onVerified(null)
+        setStatus({ type: 'err', msg: `The signature carries your email (${signedEmail}), and it would go on-chain for good. gpg adds it when it's told the key by email or name, or when gpg.conf sets "sender". Run the command above again (it leaves the email out) and paste the new output.` })
         return
       }
 
@@ -234,10 +247,11 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
 
       const pubInfo = await parsePgpKey(lean.binary)
       const proofsPublished = pubInfo ? pubInfo.notations.filter(n => identifyProof(n)).length : 0
+      const otherNotes = pubInfo ? pubInfo.notations.filter(n => !identifyProof(n)).map(n => `${n.name}=${n.value}`) : []
       if (cancelled) return
       const bytes = keyBytes + (typeof sigBytes === 'string' ? new TextEncoder().encode(sigBytes).length : sigBytes.length)
       const before = new TextEncoder().encode(full).length + new TextEncoder().encode(verified.sig).length
-      setPreview({ kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofsPublished, proofsTotal, bytes, before })
+      setPreview({ kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofsPublished, proofsTotal, otherNotes, bytes, before })
       setStatus(null)
       onVerified({
         pgpSig: verified.sig,
@@ -374,9 +388,10 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
               <div className="label">Going on-chain</div>
               <div className="value">Name: {preview.kept.join(', ')}</div>
               {preview.removed.length > 0 && (
-                <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (has an email): {preview.removed.join(', ')}</div>
+                <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (has an email, in the name or a notation): {preview.removed.join(', ')}</div>
               )}
               <div className="value">Proofs: {preview.proofsPublished}</div>
+              {preview.otherNotes?.length > 0 && <div className="value" style={{ wordBreak: 'break-all' }}>Other notations: {preview.otherNotes.join(', ')}</div>}
               {preview.proofsPublished === 0 && preview.proofsTotal > 0 && (
                 <div className="status err" style={{ marginTop: 8 }}>
                   Your {preview.proofsTotal === 1 ? 'proof is' : `${preview.proofsTotal} proofs are`} on a name being left out, so {preview.proofsTotal === 1 ? "it won't" : 'none will'} show.
@@ -685,6 +700,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
   const [preview, setPreview] = useState(null)
   const [status, setStatus] = useState(null)
   const [result, setResult] = useState(null) // { hash, proofs, kept } once the update is confirmed
+  useEffect(() => { if (result) forgetHandoff() }, [result])   // a used link is dropped from this tab
   const { writeContractAsync } = useWriteContract()
 
   useEffect(() => {
@@ -710,9 +726,11 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
         setStatus({ type: 'err', msg: `This key's only name includes your email. Add a name without it (gpg --quick-add-uid ${claim.fingerprint.toUpperCase()} "${name}"), run the command again and paste, or tick "Include my email".` })
         return
       }
+      if (lean.keyNotationEmails.length) { setStatus({ type: 'err', msg: `A notation on the key itself holds an email (${lean.keyNotationEmails.join(', ')}), and it would go on-chain for good. Remove it with gpg (gpg --edit-key, then notation), export again and paste, or tick "Include my email".` }); return }
       const published = await parsePgpKey(lean.binary)
       const proofs = (published?.notations || []).filter(n => identifyProof(n)).length
-      setPreview({ keyHex: toHex(lean.binary), kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofs, bytes: lean.binary.length, before: new TextEncoder().encode(text).length })
+      const otherNotes = (published?.notations || []).filter(n => !identifyProof(n)).map(n => `${n.name}=${n.value}`)
+      setPreview({ keyHex: toHex(lean.binary), kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofs, otherNotes, bytes: lean.binary.length, before: new TextEncoder().encode(text).length })
     })()
     return () => { cancelled = true }
   }, [keyText, claim.fingerprint, withEmail])
@@ -785,9 +803,10 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
           <div className="label">Going on-chain</div>
           <div className="value">Name: {preview.kept.join(', ')}</div>
           {preview.removed.length > 0 && (
-            <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (has an email): {preview.removed.join(', ')}</div>
+            <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (has an email, in the name or a notation): {preview.removed.join(', ')}</div>
           )}
           <div className="value">Proofs: {preview.proofs}</div>
+          {preview.otherNotes?.length > 0 && <div className="value" style={{ wordBreak: 'break-all' }}>Other notations: {preview.otherNotes.join(', ')}</div>}
           {preview.droppedSubkeys?.length > 0 && (
             <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (SSH-only subkey): {preview.droppedSubkeys.map(f => `${f.slice(0, 4)} ${f.slice(4, 8)} …`).join(', ')}</div>
           )}
@@ -1041,6 +1060,7 @@ export default function Attest() {
   // State flowing through the steps
   const [pgpData, setPgpData]   = useState(null)   // { pgpSig, signedText, keyId, fingerprint, keyHex, sigHex, pgpMeta }
   const [published, setPublished] = useState(false)
+  useEffect(() => { if (published) forgetHandoff() }, [published])   // a used link is dropped from this tab
   const [linkUsed, setLinkUsed] = useState(false) // a CLI link fills one claim; after that, New claim is a normal one
   const linkClaim = claimHandoff && !linkUsed ? claimHandoff : null
   // The paste lives here so switching tabs mid-way doesn't lose it; a CLI link fills it in.

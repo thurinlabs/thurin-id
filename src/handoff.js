@@ -41,13 +41,25 @@ function payloadBytes(v) {
   return new TextEncoder().encode(v)
 }
 
-/** The hand-off in the current URL, or null. Throws only for a fragment that claims to be one and isn't. */
+// The link carries an unpublished address-to-key link and maybe a permission anyone can use until
+// its deadline, so it doesn't stay in the address bar, history, or synced history: it moves to this
+// tab's sessionStorage (so a reload still works) and is dropped once used (forgetHandoff).
+const STASH = 'thurin-handoff'
+export function forgetHandoff() { try { sessionStorage.removeItem(STASH) } catch { /* private mode */ } }
+
+/** The hand-off in the current URL (or this tab's stash), or null. Throws only for a fragment that claims to be one and isn't. */
 export function readHandoff() {
-  const m = window.location.hash.match(/^#handoff=([A-Za-z0-9_.-]+)$/)
-  if (!m) return null
+  let frag = window.location.hash.match(/^#handoff=([A-Za-z0-9_.-]+)$/)?.[1] ?? null
+  if (frag) {
+    try { sessionStorage.setItem(STASH, frag) } catch { /* private mode: a reload loses it */ }
+    history.replaceState(null, '', window.location.pathname + window.location.search)
+  } else {
+    try { frag = sessionStorage.getItem(STASH) } catch { frag = null }
+  }
+  if (!frag) return null
   let h
   try {
-    const [json, keyPart, sigPart] = m[1].split('.')
+    const [json, keyPart, sigPart] = frag.split('.')
     h = JSON.parse(new TextDecoder().decode(bytesFromBase64Url(json)))
     if (h && keyPart) h.key = payloadValue(bytesFromBase64Url(keyPart))
     if (h && sigPart) h.signature = payloadValue(bytesFromBase64Url(sigPart))

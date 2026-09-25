@@ -9,7 +9,6 @@ import { normalize } from 'viem/ens'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL } from './wagmiConfig'
 import { fingerprintToBytes, bytesToFingerprint, keyIdToBytes } from '@thurinlabs/identity-kit'
 import {
-  ThurinCard,
   IdentityKitProvider,
   identifyProof,
   verifyProof,
@@ -25,7 +24,6 @@ import {
   claimFates,
   claimFateText,
 } from '@thurinlabs/identity-kit'
-import '@thurinlabs/identity-kit/styles'
 import { siteLinks } from './links'
 import Attest from './components/Attest'
 import LookupPreview from './components/LookupPreview'
@@ -86,6 +84,24 @@ function copyToClipboard(text, e) {
 export function usesPathRouting() {
   const h = window.location.hostname
   return h === 'thurin.id' || h.endsWith('.eth.limo') || h === 'localhost' || h === '127.0.0.1'
+}
+
+/** The site's mode, following the toggle (it sets data-theme on <html>). */
+function useSiteTheme() {
+  const read = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
+  const [theme, setTheme] = useState(read)
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTheme(read()))
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [])
+  return theme
+}
+
+/** Card images are drawn behind thurin.id itself; a copy served elsewhere (an ENS gateway) asks thurin.id. */
+function cardHost() {
+  const h = window.location.hostname
+  return h === 'thurin.id' || h === 'localhost' || h === '127.0.0.1' ? '' : 'https://thurin.id'
 }
 
 function parseRoute() {
@@ -996,17 +1012,7 @@ function Explorer() {
   const links = useMemo(() => siteLinks(), [])
   const [query, setQuery] = useState(() => parseRoute()?.value || '')
   const [submitted, setSubmitted] = useState(() => parseRoute())
-  // The site's dark mode is the kit card's "thurin" theme.
-  const siteCardTheme = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'thurin')
-  const [cardTheme, setCardTheme] = useState(siteCardTheme)
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setCardTheme(siteCardTheme())
-    })
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-    return () => observer.disconnect()
-  }, [])
+  const siteTheme = useSiteTheme()
   const inputType = detectInputType(query)
 
   // On mount + popstate, parse route and auto-submit
@@ -1349,19 +1355,15 @@ function Explorer() {
 
       {!submitted && (
         <>
-          <IdentityKitProvider
-            rpcUrl={RPC_URL}
-            network={NETWORK}
-            baseUrl={links.self}
-          >
-            <section className="home-cards">
-              <ThurinCard ens="thurinlabs.eth" theme={cardTheme} />
-              <ThurinCard ens="vitalik.eth" theme={cardTheme} />
-            </section>
-            <p className="home-cards-link">
-              <a href={`${links.docs}/#/sdk`} target="_blank" rel="noopener noreferrer">Put your own card on any site →</a>
-            </p>
-          </IdentityKitProvider>
+          {/* An image our server draws: showing it asks no one but thurin.id. */}
+          <section className="home-cards">
+            <a href="/ens/thurinlabs.eth" className="home-card-image">
+              <img src={`${cardHost()}/card/ens/thurinlabs.eth.png${siteTheme === 'light' ? '?theme=light' : ''}`} width="640" height="200" alt="thurinlabs.eth: its PGP key, and whether it's verified on Ethereum" />
+            </a>
+          </section>
+          <p className="home-cards-link">
+            <a href={`${links.docs}/#/sdk?id=readme-card`} target="_blank" rel="noopener noreferrer">Put your card in a README →</a>
+          </p>
           <section className="home-rules">
             <div className="home-rule">
               <h3>Nothing in the middle.</h3>

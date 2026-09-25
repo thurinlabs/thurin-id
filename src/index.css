@@ -1238,12 +1238,16 @@ a.proof-link:hover {
   animation: homeRise 0.7s cubic-bezier(.2,.7,.2,1) 1.0s both;
 }
 
-/* The card's own width:100% would otherwise claim a full line each in a wrapping row. */
-.home-cards > * {
-  flex: 0 1 calc(50% - 12px);
-  max-width: 380px;
-  min-width: 0;
+.home-card-image {
+  display: block;
+  max-width: 640px;
+  width: 100%;
+  line-height: 0;
+  border: 1px solid var(--color-border);
+  transition: border-color 0.2s;
 }
+.home-card-image:hover { border-color: var(--color-primary-dim); }
+.home-card-image img { width: 100%; height: auto; }
 
 /* Three rules */
 .home-rules {
@@ -1333,7 +1337,6 @@ a.proof-link:hover {
   .home-rules { grid-template-columns: 1fr; }
   .home-cards-link { margin: -24px 0 40px; }
   .home-cards { margin: 0 0 40px; gap: 16px; }
-  .home-cards > * { flex: 1 1 100%; max-width: 100%; }
   .home-rule { padding: 22px 0; border-right: none; border-bottom: 1px solid var(--color-border); }
   .home-rule:last-child { border-bottom: none; }
   .home-close { flex-direction: column; align-items: flex-start; gap: 14px; padding-top: 28px; }

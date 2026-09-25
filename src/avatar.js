@@ -1,5 +1,5 @@
 // ENS avatars without the tracking pixel. The rule (what may load) lives in the kit's
-// core/avatar.ts, shared with ThurinCard and the embed; this is only the app-side hook, since
+// core/avatar.ts, shared with the share-card service; this is only the app-side hook, since
 // the kit's own React hooks can't run here (the sibling link makes a second copy of wagmi).
 import { createElement, useEffect, useState } from 'react'
 import { useEnsText, useReadContract } from 'wagmi'
