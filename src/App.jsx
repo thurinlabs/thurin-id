@@ -3,7 +3,8 @@ import { version } from '../package.json'
 import { useReadContract, useReadContracts, useEnsAddress, useEnsName, useAccount } from 'wagmi'
 import { useSafeAvatar, AvatarImg } from './avatar'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { createPublicClient, http, hexToString } from 'viem'
+import { createPublicClient, http } from 'viem'
+import { payloadText } from './payload'
 import { normalize } from 'viem/ens'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, NETWORK, CHAIN, EXPLORER_URL } from './wagmiConfig'
 import { fingerprintHash, bytesToFingerprint, keyIdToBytes } from '@thurinlabs/identity-kit'
@@ -804,8 +805,8 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                 functionName: 'getPayload',
                 args: [addr, BigInt(idx)],
               })
-              pgpSignature = hexToString(sigHex)
-              pgpPublicKey = hexToString(keyHex)
+              pgpSignature = payloadText(sigHex, 'signature')
+              pgpPublicKey = payloadText(keyHex, 'key')
             } catch {}
             matching.push({
               address: addr,
@@ -1213,8 +1214,8 @@ function Explorer() {
         const p = payloads?.[index]
         let pgpSignature = null, pgpPublicKey = null
         if (p?.status === 'success') {
-          pgpSignature = hexToString(p.result[0])
-          pgpPublicKey = hexToString(p.result[1])
+          pgpSignature = payloadText(p.result[0], 'signature')
+          pgpPublicKey = payloadText(p.result[1], 'key')
         }
         const revokedAt = Number(row.revokedAt)
         return {

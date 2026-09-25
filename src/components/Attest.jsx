@@ -2,8 +2,9 @@ import { Fragment, useState, useCallback, useMemo, useEffect } from 'react'
 import { useAccount, useWriteContract, useReadContract, useReadContracts } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import * as openpgp from 'openpgp'
-import { createPublicClient, http, stringToHex, hexToString } from 'viem'
-import { stripEmailUserIDs, hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyClearsigned, verifyAttestation } from '@thurinlabs/identity-kit'
+import { createPublicClient, http, toHex } from 'viem'
+import { payloadText } from '../payload'
+import { hasEmailUserID, parsePgpKey, identifyProof, fingerprintToBytes, bytesToFingerprint, verifyAttestation, verifyStatementSignature, leanKey, leanSignature } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 import { readHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
@@ -32,7 +33,10 @@ function copyToClipboard(text, e) {
 
 /** The signed block and the public key block out of one terminal paste (prompts and noise around them are ignored). */
 function splitPaste(text) {
-  const sig = text.match(/-----BEGIN PGP SIGNED MESSAGE-----[\s\S]*?-----END PGP SIGNATURE-----/)?.[0] ?? null
+  // A detached signature (the command's output) or a whole clearsigned message (CLI links, older habits).
+  const sig = text.match(/-----BEGIN PGP SIGNED MESSAGE-----[\s\S]*?-----END PGP SIGNATURE-----/)?.[0]
+    ?? text.match(/-----BEGIN PGP SIGNATURE-----[\s\S]*?-----END PGP SIGNATURE-----/)?.[0]
+    ?? null
   const key = text.match(/-----BEGIN PGP PUBLIC KEY BLOCK-----[\s\S]*?-----END PGP PUBLIC KEY BLOCK-----/)?.[0] ?? null
   return { sig, key }
 }
@@ -63,11 +67,15 @@ const MAX_PUBKEY_BYTES = 8192
 const PICK_SIGNING_KEY = `F=$(gpg -K --with-colons | awk -F: '$1=="sec"&&$12~/S/{s=1}s&&$1=="fpr"{print $10;exit}')`
 const EXPORT_OPTIONS = 'export-minimal,no-export-attributes'
 
+// Lean format: a detached text-mode signature over the line (no trailing line break) and the key
+// without SSH-only subkeys. Emails stay in the export so "Include my email" works without
+// re-running; the page leaves them out otherwise.
 function signCommand(address, key) {
-  const sign = `echo "${gpgPayload(address)}" | gpg --clearsign`
+  const sign = `printf '%s' "${gpgPayload(address)}" | gpg --detach-sign --textmode --armor`
+  const exp = `gpg --export-options ${EXPORT_OPTIONS} --export-filter drop-subkey='usage = a' --armor --export`
   return key
-    ? `${sign} -u "${key}"; gpg --export-options ${EXPORT_OPTIONS} --armor --export "${key}"`
-    : `${PICK_SIGNING_KEY}; ${sign} -u $F; gpg --export-options ${EXPORT_OPTIONS} --armor --export $F`
+    ? `${sign} -u "${key}"; ${exp} "${key}"`
+    : `${PICK_SIGNING_KEY}; ${sign} -u $F; ${exp} $F`
 }
 
 function spacedFingerprint(fpr) {
@@ -127,30 +135,37 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
     if (!paste.trim() || !address) { setStatus(null); return }
     const { sig, key } = splitPaste(paste)
     if (!sig || !key) {
-      setStatus({ type: 'err', msg: `That's only part of it: the output has a signed message and a public key block${sig ? '; the key block is missing' : key ? '; the signed message is missing' : ''}. Paste all of it.` })
+      setStatus({ type: 'err', msg: `That's only part of it: the output has a signature and a public key block${sig ? '; the key block is missing' : key ? '; the signature is missing' : ''}. Paste all of it.` })
       return
     }
     setStatus({ type: 'info', msg: 'Checking the signature…' })
     ;(async () => {
       try {
-        const message = await openpgp.readCleartextMessage({ cleartextMessage: sig })
-        const signedText = message.getText().trim()
-        if (!signedText.toLowerCase().includes(address.toLowerCase())) {
-          throw new Error(`the signed line doesn't name your connected address. Copy the command again: it has to sign "${gpgPayload(address)}".`)
+        const clearsigned = sig.includes('-----BEGIN PGP SIGNED MESSAGE-----')
+        if (clearsigned) {
+          const message = await openpgp.readCleartextMessage({ cleartextMessage: sig })
+          if (!message.getText().toLowerCase().includes(address.toLowerCase())) {
+            throw new Error(`the signed line doesn't name your connected address. Copy the command again: it has to sign "${gpgPayload(address)}".`)
+          }
         }
+        const sigPackets = clearsigned
+          ? (await openpgp.readCleartextMessage({ cleartextMessage: sig })).signature.packets
+          : (await openpgp.readSignature({ armoredSignature: sig })).packets
+        const signedText = gpgPayload(address)
         // `--export "<email>"` can print several keys: use the one that made the signature. The
-        // check is the kit's, the same one every lookup runs (curve policy, key valid now).
+        // check is the kit's, the same one every lookup runs (curve policy, key valid now), over
+        // the rebuilt line, which is what a lean claim stores.
         const keys = await openpgp.readKeys({ armoredKeys: key })
-        const issuer = message.signature.packets[0]?.issuerKeyID
+        const issuer = sigPackets[0]?.issuerKeyID
         let publicKey = null
         let ownKeyReason = null // the signer's key is in the paste, but the signature didn't verify
         for (const k of keys) {
-          const v = await verifyClearsigned({ armoredKey: k.armor(), clearsigned: sig })
+          const v = await verifyStatementSignature({ key: k.armor(), signature: sig, address })
           if (v.verified) { publicKey = k; break }
           if (issuer && k.getKeys(issuer).length) ownKeyReason = v.reason || 'verification failed'
         }
         if (!publicKey) throw new Error(ownKeyReason
-          ? `the key that signed is in the paste, but its signature doesn't verify (${ownKeyReason}). If \`echo test | gpg --clearsign | gpg --verify\` says BAD too, it's your gpg setup, not this page.`
+          ? `the key that signed is in the paste, but its signature doesn't verify (${ownKeyReason}). If \`echo test | gpg --clearsign | gpg --verify\` says BAD too, it's your gpg setup, not this page. Otherwise check the line wasn't changed: it has to be "${gpgPayload(address)}".`
           : `the signature doesn't match the key in the paste. Run the whole command again and paste all of its output.`)
         const fingerprint = publicKey.getFingerprint().toUpperCase()
         if (wantedFingerprint && fingerprint !== wantedFingerprint) {
@@ -158,7 +173,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         }
         const expirationTime = await publicKey.getExpirationTime()
         const expiresAt = expirationTime && expirationTime !== Infinity ? new Date(expirationTime).toISOString() : null
-        const keyId = message.signature.packets[0]?.issuerKeyID?.toHex()?.toUpperCase() ?? null
+        const keyId = sigPackets[0]?.issuerKeyID?.toHex()?.toUpperCase() ?? null
         const armoredFull = publicKey.armor()
         const info = await parsePgpKey(armoredFull)
         const emails = (info?.userIDs ?? []).map(u => u.match(/<([^>]+@[^>]+)>/)?.[1] || (u.includes('@') ? u : null)).filter(Boolean)
@@ -172,7 +187,9 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paste, address, wantedFingerprint])
 
-  // What gets published follows the email switch.
+  // What gets published follows the email switch. Lean format: the key as raw bytes (emails left
+  // out unless ticked, SSH-only subkeys left out, newest self-signatures only) and the signature
+  // alone; the line it signs is rebuilt by every reader.
   useEffect(() => {
     if (!verified) return
     let cancelled = false
@@ -181,30 +198,30 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
       const fullInfo = await parsePgpKey(full)
       const proofsTotal = fullInfo ? fullInfo.notations.filter(n => identifyProof(n)).length : 0
 
-      let armored, kept, removed
-      if (includeEmail) {
-        armored = full; kept = fullInfo?.userIDs ?? []; removed = []
-      } else {
-        const stripped = await stripEmailUserIDs(full)
-        if (cancelled) return
-        if (!stripped) {
-          setPreview(null); setNeedsName({ proofs: proofsTotal }); setStatus(null); onVerified(null)
-          return
-        }
-        armored = stripped.armored; kept = stripped.kept; removed = stripped.removed
+      const lean = await leanKey(full, { includeEmail })
+      if (cancelled) return
+      if (!lean) {
+        setPreview(null); setNeedsName({ proofs: proofsTotal }); setStatus(null); onVerified(null)
+        return
       }
       setNeedsName(false)
-
-      const bytes = new TextEncoder().encode(armored).length
-      if (bytes > MAX_PUBKEY_BYTES) {
-        if (cancelled) return
+      const sigBytes = await leanSignature(verified.sig)
+      if (cancelled) return
+      if (!sigBytes) {
         setPreview(null); onVerified(null)
-        setStatus({ type: 'err', msg: `The key to publish is ${(bytes / 1024).toFixed(1)} KB, over the ${MAX_PUBKEY_BYTES / 1024} KB on-chain limit. It likely has large photos or many signatures on it; the command already leaves most of those out.` })
+        setStatus({ type: 'err', msg: "Couldn't read the signature. Run the command again and paste all of its output." })
+        return
+      }
+
+      const keyBytes = lean.binary.length
+      if (keyBytes > MAX_PUBKEY_BYTES) {
+        setPreview(null); onVerified(null)
+        setStatus({ type: 'err', msg: `The key to publish is ${(keyBytes / 1024).toFixed(1)} KB, over the ${MAX_PUBKEY_BYTES / 1024} KB on-chain limit. It likely has many signatures or subkeys on it.` })
         return
       }
 
       // What a lookup will run on the published claim, run now on exactly those bytes.
-      const check = await verifyAttestation({ pgpPublicKey: armored, pgpSignature: verified.sig, fingerprint: verified.fingerprint, ethAddress: address })
+      const check = await verifyAttestation({ pgpPublicKey: lean.binary, pgpSignature: sigBytes, fingerprint: verified.fingerprint, ethAddress: address })
       if (cancelled) return
       if (!check.verified) {
         setPreview(null); onVerified(null)
@@ -212,19 +229,22 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         return
       }
 
-      const pubInfo = await parsePgpKey(armored)
+      const pubInfo = await parsePgpKey(lean.binary)
       const proofsPublished = pubInfo ? pubInfo.notations.filter(n => identifyProof(n)).length : 0
       if (cancelled) return
-      setPreview({ kept, removed, proofsPublished, proofsTotal, bytes })
+      const bytes = keyBytes + sigBytes.length
+      const before = new TextEncoder().encode(full).length + new TextEncoder().encode(verified.sig).length
+      setPreview({ kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofsPublished, proofsTotal, bytes, before })
       setStatus(null)
       onVerified({
         pgpSig: verified.sig,
         signedText: verified.signedText,
         keyId: verified.keyId,
         fingerprint: verified.fingerprint,
-        armoredPublicKey: armored,
+        keyHex: toHex(lean.binary),
+        sigHex: toHex(sigBytes),
         pgpMeta: {
-          userIDs: kept,
+          userIDs: lean.kept,
           algorithm: verified.publicKey.keyPacket.algorithm,
           bits: verified.publicKey.keyPacket.getBitSize?.() ?? null,
           createdAt: verified.publicKey.keyPacket.created?.toISOString() ?? null,
@@ -361,7 +381,10 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
                   then run the command again, or publish now and update the key later.
                 </div>
               )}
-              <div className="value" style={{ color: 'var(--color-text-muted)' }}>{(preview.bytes / 1024).toFixed(1)} KB</div>
+              {preview.droppedSubkeys?.length > 0 && (
+                <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (SSH-only subkey): {preview.droppedSubkeys.map(f => `${f.slice(0, 4)} ${f.slice(4, 8)} …`).join(', ')}</div>
+              )}
+              <div className="value" style={{ color: 'var(--color-text-muted)' }}>{(preview.bytes / 1024).toFixed(1)} KB{preview.before ? ` on-chain (${(preview.before / 1024).toFixed(1)} KB as pasted text)` : ''}</div>
             </div>
           )}
 
@@ -402,10 +425,11 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
     try {
       setPublishStatus({ type: 'info', msg: 'Sending transaction…' })
 
+      // Lean format: raw signature and key bytes (see the sign step).
       const payload = [
         fingerprintToBytes(attestation.gpgFingerprint),
-        stringToHex(attestation.gpgSignature),
-        stringToHex(attestation.gpgPublicKey),
+        attestation.gpgSignatureHex,
+        attestation.gpgPublicKeyHex,
       ]
       // `reattest` revokes the chosen claim and publishes the new one in a single transaction.
       const hash = replaceIndex !== null && replaceIndex !== undefined
@@ -522,7 +546,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
             <Authorize
               address={attestation.ethAddress}
               op={replacing ? 'reattest' : 'attest'}
-              fields={{ fingerprint: attestation.gpgFingerprint, key: attestation.gpgPublicKey, signature: attestation.gpgSignature, index: replacing ? replaceIndex : undefined, includeEmail: (attestation.gpgMeta?.userIDs || []).some(u => u.includes('@')) }}
+              fields={{ fingerprint: attestation.gpgFingerprint, key: attestation.gpgPublicKeyHex, signature: attestation.gpgSignatureHex, index: replacing ? replaceIndex : undefined, includeEmail: (attestation.gpgMeta?.userIDs || []).some(u => u.includes('@')) }}
               onPublished={hash => { setTxHash(hash); setPublishStatus({ type: 'ok', msg: '✓ Attested on-chain.' }); onPublish && onPublish() }}
             />
           )}
@@ -580,7 +604,7 @@ function useMyAttestations(address) {
           fingerprint: bytesToFingerprint(row.fingerprint),
           createdAt: Number(row.createdAt),
           revoked: revokedAt !== 0,
-          pgpPublicKey: p?.status === 'success' ? hexToString(p.result[1]) : null,
+          pgpPublicKey: p?.status === 'success' ? payloadText(p.result[1], 'key') : null,
         }
       })
       .reverse()
@@ -616,22 +640,17 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
         setStatus({ type: 'err', msg: `That key's fingerprint (${info.fingerprint}) is not this claim's key.` })
         return
       }
-      let armored, kept, removed
-      if (withEmail) {
-        armored = text; kept = info.userIDs; removed = []
-      } else {
-        const stripped = await stripEmailUserIDs(text)
-        if (cancelled) return
-        if (!stripped) {
-          const name = (info.userIDs || []).map(u => u.replace(/\s*<[^>]*>/, '').replace(/\s*\([^)]*\)/, '').replace(/["$`\\]/g, '').trim()).find(Boolean) || 'Your Name'
-          setStatus({ type: 'err', msg: `This key's only name includes your email. Add a name without it (gpg --quick-add-uid ${claim.fingerprint.toUpperCase()} "${name}"), run the command again and paste, or tick "Include my email".` })
-          return
-        }
-        armored = stripped.armored; kept = stripped.kept; removed = stripped.removed
+      // Lean format, as in the sign step: raw bytes, emails out unless ticked, SSH-only subkeys out.
+      const lean = await leanKey(text, { includeEmail: withEmail })
+      if (cancelled) return
+      if (!lean) {
+        const name = (info.userIDs || []).map(u => u.replace(/\s*<[^>]*>/, '').replace(/\s*\([^)]*\)/, '').replace(/["$`\\]/g, '').trim()).find(Boolean) || 'Your Name'
+        setStatus({ type: 'err', msg: `This key's only name includes your email. Add a name without it (gpg --quick-add-uid ${claim.fingerprint.toUpperCase()} "${name}"), run the command again and paste, or tick "Include my email".` })
+        return
       }
-      const published = await parsePgpKey(armored)
+      const published = await parsePgpKey(lean.binary)
       const proofs = (published?.notations || []).filter(n => identifyProof(n)).length
-      setPreview({ armored, kept, removed, proofs, bytes: new TextEncoder().encode(armored).length })
+      setPreview({ keyHex: toHex(lean.binary), kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofs, bytes: lean.binary.length, before: new TextEncoder().encode(text).length })
     })()
     return () => { cancelled = true }
   }, [keyText, claim.fingerprint, withEmail])
@@ -645,7 +664,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
         address: REGISTRY_ADDRESS,
         abi: REGISTRY_ABI,
         functionName: 'updateKey',
-        args: [BigInt(claim.index), stringToHex(preview.armored)],
+        args: [BigInt(claim.index), preview.keyHex],
         chainId: CHAIN.id,
       })
       setStatus({ type: 'info', msg: 'Waiting for confirmation…' })
@@ -663,7 +682,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
     }
   }
 
-  const exportCommand = `gpg --export-options export-minimal,no-export-attributes --armor --export ${claim.fingerprint.toUpperCase()}`
+  const exportCommand = `gpg --export-options export-minimal,no-export-attributes --export-filter drop-subkey='usage = a' --armor --export ${claim.fingerprint.toUpperCase()}`
 
   if (result) return (
     <div className="update-panel fade-in">
@@ -707,7 +726,10 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
             <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (has an email): {preview.removed.join(', ')}</div>
           )}
           <div className="value">Proofs: {preview.proofs}</div>
-          <div className="value" style={{ color: 'var(--color-text-muted)' }}>{(preview.bytes / 1024).toFixed(1)} KB</div>
+          {preview.droppedSubkeys?.length > 0 && (
+            <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (SSH-only subkey): {preview.droppedSubkeys.map(f => `${f.slice(0, 4)} ${f.slice(4, 8)} …`).join(', ')}</div>
+          )}
+          <div className="value" style={{ color: 'var(--color-text-muted)' }}>{(preview.bytes / 1024).toFixed(1)} KB{preview.before ? ` on-chain (${(preview.before / 1024).toFixed(1)} KB as pasted text)` : ''}</div>
         </div>
       )}
 
@@ -732,7 +754,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
         <Authorize
           address={address}
           op="update-key"
-          fields={{ fingerprint: claim.fingerprint, key: preview.armored, index: claim.index, includeEmail: withEmail }}
+          fields={{ fingerprint: claim.fingerprint, key: preview.keyHex, index: claim.index, includeEmail: withEmail }}
           onPublished={hash => { setStatus(null); setResult({ hash, proofs: preview.proofs, kept: preview.kept }); onDone && onDone() }}
         />
       )}
@@ -914,7 +936,7 @@ export default function Attest() {
   }, [])
 
   // State flowing through the steps
-  const [pgpData, setPgpData]   = useState(null)   // { pgpSig, signedText, keyId, fingerprint, armoredPublicKey, pgpMeta }
+  const [pgpData, setPgpData]   = useState(null)   // { pgpSig, signedText, keyId, fingerprint, keyHex, sigHex, pgpMeta }
   const [published, setPublished] = useState(false)
   const [linkUsed, setLinkUsed] = useState(false) // a CLI link fills one claim; after that, New claim is a normal one
   const linkClaim = claimHandoff && !linkUsed ? claimHandoff : null
@@ -954,7 +976,8 @@ export default function Attest() {
     gpgFingerprint: pgpData.fingerprint,
     gpgSignedMessage: pgpData.signedText,
     gpgSignature: pgpData.pgpSig,
-    gpgPublicKey: pgpData.armoredPublicKey,
+    gpgSignatureHex: pgpData.sigHex,
+    gpgPublicKeyHex: pgpData.keyHex,
     gpgKeyId: pgpData.keyId,
     gpgMeta: pgpData.pgpMeta,
   } : null
