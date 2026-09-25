@@ -7,7 +7,8 @@ import { KIND_LABEL } from '../recordLabels'
 // Records on the claim this page speaks for, from `recordsOf`: Thurin's kinds first, each rendered
 // its own way, then anyone else's (reverse-dot names) as plain text, in the order they were set.
 // Visitors read; the claim's owner, connected, can set, edit, and clear the plain Thurin kinds and
-// clear any other (the encrypted kinds stay CLI-only until the browser can encrypt). Reads and
+// clear any other (the encrypted kinds stay CLI-only until the browser can encrypt; the release
+// list is kept by `thurin record add-release`, which hashes the checksum file). Reads and
 // writes use the app's own wagmi (the kit is a sibling link with a second wagmi copy); the kit
 // supplies the kinds, order, and parsers.
 
@@ -95,6 +96,22 @@ function Body({ r }) {
             {!d.clearsigned && <span className="status-badge neutral" style={{ marginLeft: 8 }} title="Plain text, not signed">unsigned</span>}
           </div>
           <pre className="value prose" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{d.statement}</pre>
+        </>
+      )
+    case 'releases':
+      return (
+        <>
+          {d.releases.map(rel => (
+            <div key={rel.name} className="value" style={{ marginBottom: 4 }}>
+              {rel.url ? <a href={rel.url} target="_blank" rel="noopener noreferrer" className="fingerprint-link">{rel.name}</a> : rel.name}
+              <span style={{ color: 'var(--color-text-muted)' }}> · {rel.date} · sha256 </span>
+              <span title={rel.sha256}>{rel.sha256.slice(0, 12)}…</span>
+              <button className="copy-btn" style={{ marginLeft: 6 }} onClick={(e) => copy(rel.sha256, e)}>copy</button>
+            </div>
+          ))}
+          <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>
+            Releases this identity put out, each named by the sha256 of its checksum file. <a href="https://docs.thurin.id/#/guides/verify-release" target="_blank" rel="noopener noreferrer" className="fingerprint-link">How to check a download</a>.
+          </div>
         </>
       )
     case 'encrypted':

@@ -8,7 +8,7 @@ import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL } from '..
 
 function shortAddr(a) { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '' }
 function pretty(kind, value) {
-  if (kind === 'thurin.pointer') {
+  if (kind === 'thurin.releases') {
     try { const p = JSON.parse(value); if (p.v === 1) return p.releases.map(r => `${r.name}  ${r.date}  sha256 ${r.sha256}`).join('\n') } catch { /* raw */ }
   }
   return value

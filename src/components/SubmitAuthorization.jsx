@@ -21,7 +21,7 @@ const FNS = { attest: 'attestFor', reattest: 'reattestFor', 'update-key': 'updat
 
 function shortAddr(a) { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '' }
 function prettyRecord(kind, value) {
-  if (kind === 'thurin.pointer') {
+  if (kind === 'thurin.releases') {
     try { const p = JSON.parse(value); if (p.v === 1) return p.releases.map(r => `${r.name}  ${r.date}  sha256 ${r.sha256.slice(0, 16)}…`).join('\n') } catch { /* raw */ }
   }
   return value

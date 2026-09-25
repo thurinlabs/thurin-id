@@ -1,17 +1,17 @@
 # thurin.id
 
-Look up any Ethereum address, ENS name, or PGP fingerprint to view on-chain identity claims and verified proofs — and create your own claim at `/attest`.
+The Thurin.id site. Look up any Ethereum address, ENS name, or PGP fingerprint and see the PGP key it claims, the proofs on that key, and its records. Add your own key at `/attest`.
 
 A [Thurin Labs](https://thurinlabs.id) project. Live at **https://thurin.id**.
 
 ## What it does
 
-thurin.id is the Thurin identity explorer. It reads from the `PGPRegistry` contract on Ethereum mainnet and verifies identity proofs linked to PGP keys, entirely client-side — there is no backend.
+It reads the `PGPRegistry` contract on Ethereum mainnet and checks everything in the browser. There is no backend.
 
 1. **Look up an identity** — enter an ETH address, ENS name, or PGP fingerprint
 2. **View on-chain claims** — see which PGP keys are attested to which addresses
 3. **Verify proofs** — `proof@thurin.id` notations in PGP keys are checked against GitHub, DNS, Farcaster, Codeberg, and Mastodon
-4. **Attest** — bind your own Ethereum address and PGP key on-chain at [`/attest`](https://thurin.id/attest)
+4. **Attest** — add your PGP key to your Ethereum address at [`/attest`](https://thurin.id/attest); update, replace, or revoke it there too
 
 ## Setup
 
@@ -31,11 +31,11 @@ VITE_WALLETCONNECT_PROJECT_ID=YOUR_REOWN_PROJECT_ID
 
 Production builds (`npm run build`) use the committed `.env.production` instead, so anyone can rebuild a deployed version byte for byte ([Verify a deploy](https://docs.thurin.id/#/guides/verify-deploy)); it holds only the WalletConnect project ID and the relay URL, both public by design: every thurin.id page already ships them.
 
-Reads go to the keyless public RPC `https://ethereum.publicnode.com` by default: the v2 registry needs only plain contract calls, so no API key is needed or shipped. `VITE_RPC_URL` points the build somewhere else; visitors can also pick their own in the footer (saved in their browser). Transactions always go through the visitor's wallet.
+Reads go to the keyless public RPC `https://ethereum.publicnode.com` by default: the registry needs only plain contract calls, so no API key is needed or shipped. `VITE_RPC_URL` points the build somewhere else; visitors can also pick their own in the footer (saved in their browser). Transactions always go through the visitor's wallet.
 
 ## Running against a local chain or Sepolia
 
-The PGPRegistry v2 has the same address on every network (`0x9302E02e2869e129aC8516fE5eFFd51EA3082c09`). Set `VITE_CHAIN` and every chain-specific piece — wallet chain, RPC, explorer links — follows; the topbar shows a testnet badge.
+The registry has the same address on Ethereum mainnet and Sepolia (`0xFa6956c11163517249f8A67F5560a4406B519451`), and on anvil when deployed with the repo's script. Set `VITE_CHAIN` and every chain-specific piece — wallet chain, RPC, explorer links — follows; the topbar shows a testnet badge.
 
 **Local (fastest):** run `anvil`, deploy the registry from the `pgp-registry` repo (`forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --private-key <anvil key> --broadcast`), import an anvil test account into your wallet and add a network for `http://127.0.0.1:8545` (chain id 31337), then:
 
@@ -54,7 +54,7 @@ The explorer reads attestations straight from the `PGPRegistry` contract — his
 - **GitHub** — fetches the gist via GitHub API, checks ownership and for `openpgp4fpr:FINGERPRINT`
 - **DNS** — queries TXT records via Cloudflare DNS-over-HTTPS, checks for `openpgp4fpr:FINGERPRINT`
 - **Farcaster** — resolves the user's FID, scans recent casts on a public Farcaster node (Quilibrium's keyless Hypersnap node by default), checks for `openpgp4fpr:FINGERPRINT`
-- **Codeberg** — checks the repository description
+- **Codeberg** — checks the repository's owner and its description
 - **Mastodon** — checks profile metadata
 
 ## Privacy

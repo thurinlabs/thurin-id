@@ -5,6 +5,7 @@ export const KIND_LABEL = {
   'thurin.successor': 'Successor key',
   'thurin.affiliation': 'Affiliation',
   'thurin.canary': 'Canary',
+  'thurin.releases': 'Releases',
   'thurin.private': 'Private',
   'thurin.disclosure': 'Disclosure',
 }
