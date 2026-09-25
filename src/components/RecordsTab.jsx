@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useReadContract, useWriteContract, usePublicClient } from 'wagmi'
-import { IDENTITY_KINDS, pickRecords, parseRecord, checkRecordValue } from '@thurinlabs/identity-kit'
+import { pageRecords, parseRecord, checkRecordValue } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, EXPLORER_URL } from '../wagmiConfig'
 
-// Records on the claim this page speaks for: the kinds Thurin knows, read in one multicall
-// and rendered each its own way. The contract looks records up by kind and cannot list
-// them, so this is a curated view and says so. Visitors read; the claim's owner, connected,
-// can set, edit, and clear the plain kinds from here (the encrypted kinds stay CLI-only until
-// the browser can encrypt). Reads and writes use the app's own wagmi (the kit is a sibling
-// link with a second wagmi copy); the kit supplies the kinds, parsers, and encoding.
+// Records on the claim this page speaks for, from `recordsOf`: Thurin's kinds first, each rendered
+// its own way, then anyone else's (reverse-dot names) as plain text, in the order they were set.
+// Visitors read; the claim's owner, connected, can set, edit, and clear the plain Thurin kinds and
+// clear any other (the encrypted kinds stay CLI-only until the browser can encrypt). Reads and
+// writes use the app's own wagmi (the kit is a sibling link with a second wagmi copy); the kit
+// supplies the kinds, order, and parsers.
 
 const DOCS = 'https://docs.thurin.id/#/records'
 const KIND_LABEL = {
@@ -89,7 +89,9 @@ function Body({ r }) {
           <div className="value">
             {d.date}
             {d.clearsigned && d.verified === true && <span className="status-badge verified" style={{ marginLeft: 8 }} title="Clearsigned by the key on this claim; the signature verifies">verified</span>}
-            {d.clearsigned && d.verified === false && <span className="status-badge unverified" style={{ marginLeft: 8 }} title={d.reason || 'The signature does not verify against the key on this claim'}>unverified</span>}
+            {d.clearsigned && d.verified === false && (/not signed by this key/i.test(d.reason || '')
+              ? <span className="status-badge unverified" style={{ marginLeft: 8 }} title="Signed by a different key than the one on this claim (e.g. before a key change). Sign a new canary with this key.">different key</span>
+              : <span className="status-badge unverified" style={{ marginLeft: 8 }} title={d.reason || 'The signature does not verify against the key on this claim'}>unverified</span>)}
             {d.clearsigned && d.verified === null && <span className="status-badge neutral" style={{ marginLeft: 8 }} title="Clearsigned, not checked">signed</span>}
             {!d.clearsigned && <span className="status-badge neutral" style={{ marginLeft: 8 }} title="Plain text, not signed">unsigned</span>}
           </div>
@@ -212,7 +214,7 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
     let live = true
     ;(async () => {
       const out = []
-      for (const r of pickRecords(raw[0], raw[1], IDENTITY_KINDS)) out.push(await parseRecord(r.kind, r.text, { armoredKey: armoredKey || undefined }))
+      for (const r of pageRecords(raw[0], raw[1])) out.push(await parseRecord(r.kind, r.text, { armoredKey: armoredKey || undefined }))
       if (live) setRecords(out)
     })()
     return () => { live = false }
@@ -246,10 +248,12 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
       ) : records.map(r => (
         <div key={r.kind} className="mono-box" style={{ marginBottom: 2 }}>
           <div className="label" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span>{KIND_LABEL[r.kind] || r.kind} <span style={{ color: 'var(--color-text-muted)', textTransform: 'none', letterSpacing: 0 }}>· {r.kind}</span></span>
-            {canEdit && EDITABLE.includes(r.kind) && editing !== r.kind && (
+            {KIND_LABEL[r.kind]
+              ? <span>{KIND_LABEL[r.kind]} <span style={{ color: 'var(--color-text-muted)', textTransform: 'none', letterSpacing: 0 }}>· {r.kind}</span></span>
+              : <span style={{ textTransform: 'none', letterSpacing: 0 }}>{r.kind}</span>}
+            {canEdit && editing !== r.kind && (EDITABLE.includes(r.kind) || !r.kind.startsWith('thurin.')) && (
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                <button className="copy-btn" onClick={() => setEditing(r.kind)}>edit</button>
+                {EDITABLE.includes(r.kind) && <button className="copy-btn" onClick={() => setEditing(r.kind)}>edit</button>}
                 <ClearButton index={index} kind={r.kind} onDone={done} />
               </span>
             )}
@@ -268,7 +272,7 @@ export default function RecordsTab({ owner, index, armoredKey, canEdit = false }
         <RecordForm index={index} armoredKey={armoredKey} existing={records} onDone={done} onCancel={() => setEditing(null)} />
       )}
       <div style={{ fontFamily: 'var(--mono)', color: 'var(--color-text-muted)', fontSize: 12, marginTop: 8 }}>
-        Records Thurin knows about, on claim #{index}. {canEdit ? 'Owners can also set them from the CLI.' : 'Set from the CLI: thurin record set <kind> <value>'} · <a href={DOCS} target="_blank" rel="noopener noreferrer" className="fingerprint-link">the kinds</a>
+        Records on claim #{index}: Thurin's kinds first, then others in the order they were set. {canEdit ? 'Owners can also set them from the CLI.' : 'Set from the CLI: thurin record set <kind> <value>'} · <a href={DOCS} target="_blank" rel="noopener noreferrer" className="fingerprint-link">the kinds</a>
       </div>
     </div>
   )

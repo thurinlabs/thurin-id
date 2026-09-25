@@ -413,6 +413,15 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
   const { writeContractAsync } = useWriteContract()
   const { empty } = useIsEmpty(attestation?.ethAddress)
   const replacing = replaceIndex !== null && replaceIndex !== undefined
+  // The replaced claim's records move to the new one; a canary signed by the old key won't verify against a new key.
+  const { data: movingRecords } = useReadContract({
+    address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'recordsOf',
+    args: replacing && attestation?.ethAddress ? [attestation.ethAddress, BigInt(replaceIndex)] : undefined,
+    chainId: CHAIN.id, query: { enabled: replacing && !!attestation?.ethAddress },
+  })
+  const moving = movingRecords ? movingRecords[0].filter((_, i) => movingRecords[1][i]) : []
+  const replacedFp = replacing ? activeClaims.find(c => c.index === replaceIndex)?.fingerprint : null
+  const newKey = !!replacedFp && !!attestation && replacedFp !== attestation.gpgFingerprint?.toLowerCase()
 
   if (!active && !done) return (
     <div className={`step`}>
@@ -531,6 +540,12 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
                   </option>
                 ))}
               </select>
+              {replacing && moving.length > 0 && (
+                <div className="helper" style={{ marginTop: 8 }}>
+                  Its {moving.length === 1 ? 'record moves' : `${moving.length} records move`} to the new claim.
+                  {newKey && moving.includes('thurin.canary') && ' Your canary was signed by the old key: sign a new one with the new key after publishing.'}
+                </div>
+              )}
               {activeClaims.some(c => c.fingerprint === attestation.gpgFingerprint.toLowerCase()) && (replaceIndex === null || replaceIndex === undefined) && (
                 <div className="status err" style={{ marginTop: 8 }}>
                   This key already has an active claim. Pick it above to replace it — the registry allows one active claim per key.
@@ -607,6 +622,9 @@ function useMyAttestations(address) {
           fingerprint: bytesToFingerprint(row.fingerprint),
           createdAt: Number(row.createdAt),
           revoked: revokedAt !== 0,
+          state: row.state,
+          replacedBy: row.state === 'replaced' ? Number(row.replacedBy) : null,
+          revokeReason: row.revokeReason,
           pgpPublicKey: p?.status === 'success' ? payloadText(p.result, 'key') : null,
         }
       })
@@ -767,6 +785,8 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
 
 function YourAttestations({ address, attestations, count, refetch, onCreate, handoff = null }) {
   const [revokeStatus, setRevokeStatus] = useState({})
+  const [confirmRevoke, setConfirmRevoke] = useState(null)   // index being confirmed
+  const [revokeReason, setRevokeReason] = useState('')
   const [emailByIndex, setEmailByIndex] = useState({}) // index → true when the on-chain key has an email user ID
   const [updating, setUpdating] = useState(handoff ? handoff.index : null) // index of the claim whose key is being updated
   useEffect(() => { if (handoff) setUpdating(handoff.index) }, [handoff])   // the hand-off arrives once the right wallet is connected
@@ -795,15 +815,16 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
     </div>
   )
 
-  const handleRevoke = async (index) => {
+  const handleRevoke = async (index, reason) => {
     try {
+      setConfirmRevoke(null)
       setRevokeStatus(s => ({ ...s, [index]: { type: 'info', msg: 'Sending revoke…' } }))
 
       const hash = await writeContractAsync({
         address: REGISTRY_ADDRESS,
         abi: REGISTRY_ABI,
         functionName: 'revoke',
-        args: [BigInt(index), ''],
+        args: [BigInt(index), reason],
         chainId: CHAIN.id,
       })
 
@@ -852,8 +873,8 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                 </td>
                 <td className="att-date">{formatDate(a.createdAt)}</td>
                 <td>
-                  <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`}>
-                    {a.revoked ? 'revoked' : 'active'}
+                  <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`} title={a.revokeReason && a.state === 'revoked' ? `Reason: ${a.revokeReason}` : undefined}>
+                    {a.state === 'replaced' ? `replaced → #${a.replacedBy}` : a.revoked ? 'revoked' : 'active'}
                   </span>
                 </td>
                 <td className="att-actions-cell">
@@ -864,7 +885,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                       </button>
                       <button
                         className="btn btn-sm"
-                        onClick={() => handleRevoke(a.index)}
+                        onClick={() => { setConfirmRevoke(confirmRevoke === a.index ? null : a.index); setRevokeReason('') }}
                         disabled={revokeStatus[a.index]?.type === 'info'}
                       >
                         {revokeStatus[a.index]?.type === 'info' ? 'Revoking…' : 'Revoke'}
@@ -887,6 +908,23 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                         {revokeStatus[a.index].msg}
                       </span>
                     )}
+                  </td>
+                </tr>
+              )}
+              {confirmRevoke === a.index && !a.revoked && (
+                <tr key={`${a.index}-revoke`} className="att-update-row">
+                  <td colSpan={5} style={{ padding: '4px 8px 12px' }}>
+                    <div className="row" style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span className="helper" style={{ margin: 0 }}>Revoke #{a.index} for good? Reason:</span>
+                      <select value={revokeReason} onChange={e => setRevokeReason(e.target.value)}>
+                        <option value="">none given</option>
+                        <option value="compromised">compromised: the key may be in someone else's hands</option>
+                        <option value="retired">retired: no longer used</option>
+                        <option value="other">other</option>
+                      </select>
+                      <button className="btn btn-sm" onClick={() => handleRevoke(a.index, revokeReason)}>Revoke</button>
+                      <button className="btn btn-sm" onClick={() => setConfirmRevoke(null)}>Keep</button>
+                    </div>
                   </td>
                 </tr>
               )}
