@@ -780,7 +780,7 @@ a.proof-link:hover {
   font-size: 12px;
   letter-spacing: 0.08em;
   text-align: center;
-  margin: -40px 0 56px;
+  margin: -40px 0 41px;
   animation: homeRise 0.7s cubic-bezier(.2,.7,.2,1) 1.1s both;
 }
 
@@ -884,7 +884,7 @@ body:has(.home-close) .footer { margin-top: 44px; }
   .home-lede { font-size: 17px; margin-top: 14px; }
   .search-section-home { margin-bottom: 40px; }
   .home-rules { grid-template-columns: 1fr; }
-  .home-cards-link { margin: -24px 0 40px; }
+  .home-cards-link { margin: -24px 0 29px; }
   .home-cards { margin: 0 0 40px; gap: 16px; }
   .home-rule { padding: 22px 0; border-right: none; border-bottom: 1px solid var(--color-border); }
   .home-rule:last-child { border-bottom: none; }
