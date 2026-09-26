@@ -179,7 +179,7 @@ function RecordForm({ index, armoredKey, fingerprint, existing, initialKind, ini
     <div className="mono-box record-form" style={{ marginTop: 8 }}>
       <div className="label">{replaces ? 'Replace' : 'Set'} a record on claim #{index}</div>
       <div className="record-form-row">
-        <select value={kind} onChange={e => { setKind(e.target.value); setStatus(null) }} disabled={!!initialKind}>
+        <select name="record-kind" value={kind} onChange={e => { setKind(e.target.value); setStatus(null) }} disabled={!!initialKind}>
           {EDITABLE.map(k => <option key={k} value={k}>{KIND_LABEL[k]} · {k}</option>)}
         </select>
       </div>
@@ -188,7 +188,7 @@ function RecordForm({ index, armoredKey, fingerprint, existing, initialKind, ini
       ) : (
         <div className="value prose" style={{ color: 'var(--color-text-muted)', marginBottom: 6 }}>{hintFor(kind)}</div>
       )}
-      <textarea value={value} onChange={e => { setValue(e.target.value); setStatus(null) }} rows={kind === 'thurin.canary' ? 6 : 2} spellCheck={false} placeholder={kind === 'thurin.affiliation' ? '{"v":1,"with":"…"}' : ''} />
+      <textarea name="record-value" autoComplete="off" value={value} onChange={e => { setValue(e.target.value); setStatus(null) }} rows={kind === 'thurin.canary' ? 6 : 2} spellCheck={false} placeholder={kind === 'thurin.affiliation' ? '{"v":1,"with":"…"}' : ''} />
       <div className="value" style={{ color: tooBig ? 'var(--color-error)' : 'var(--color-text-muted)', marginTop: 4 }}>
         {bytes} / 1024 bytes
         {check && !check.valid && <span style={{ color: 'var(--color-error)' }}> · {check.reason}</span>}

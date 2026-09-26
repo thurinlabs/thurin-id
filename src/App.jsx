@@ -967,6 +967,9 @@ function Explorer() {
       <div className={submitted ? 'search-section' : 'search-section search-section-home'}>
         <div className="lookup-input-row">
           <input
+            name="lookup"
+            aria-label="Look up an identity"
+            autoComplete="off"
             className="text-input"
             placeholder="ENS name, address, fingerprint, or key ID"
             value={query}

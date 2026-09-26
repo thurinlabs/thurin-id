@@ -98,7 +98,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
       </p>
       <div className="row" style={{ marginTop: 8, alignItems: 'center', gap: 8 }}>
         <span className="helper" style={{ margin: 0 }}>Good for</span>
-        <select value={deadlineS} onChange={e => setDeadlineS(Number(e.target.value))}>
+        <select name="deadline" value={deadlineS} onChange={e => setDeadlineS(Number(e.target.value))}>
           {DEADLINES.map(d => <option key={d.s} value={d.s}>{d.label}</option>)}
         </select>
       </div>
@@ -126,7 +126,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
         <button className="btn" onClick={copyLink}>{copied ? 'copied' : 'Copy link for someone with a wallet'}</button>
         <button className="btn btn-sm" onClick={() => copyToFile(handoff)}>Download for thurin submit</button>
       </div>
-      <textarea className="pgp-input" readOnly value={link} onFocus={e => e.target.select()} />
+      <textarea name="permission-link" className="pgp-input" readOnly value={link} onFocus={e => e.target.select()} />
       {status && <div className={`status ${status.type}`}>{status.msg}</div>}
     </div>
   )

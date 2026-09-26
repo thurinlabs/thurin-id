@@ -329,6 +329,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
           {otherKey && (
             <div className="fade-in" style={{ marginTop: 12 }}>
               <input
+                name="key-choice"
                 className="key-choice"
                 placeholder="Fingerprint, or an email or name on the key"
                 value={keyChoiceText}
@@ -343,6 +344,8 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
           )}
 
           <textarea
+            name="signed-output"
+            autoComplete="off"
             className="pgp-input"
             style={{ minHeight: 120, marginTop: 16 }}
             placeholder={`Paste the whole output here:\n\n-----BEGIN PGP SIGNED MESSAGE-----\n…\n-----END PGP SIGNATURE-----\n-----BEGIN PGP PUBLIC KEY BLOCK-----\n…\n-----END PGP PUBLIC KEY BLOCK-----`}
@@ -377,7 +380,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
               )}
               <p><strong>Or publish your email:</strong></p>
               <label className="email-toggle" style={{ marginTop: 4 }}>
-                <input type="checkbox" checked={includeEmail} onChange={e => setIncludeEmail(e.target.checked)} />
+                <input type="checkbox" name="include-email" checked={includeEmail} onChange={e => setIncludeEmail(e.target.checked)} />
                 <span>Include my email. Only if it's already public; it can't be removed later.</span>
               </label>
             </div>
@@ -405,7 +408,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
 
           {verified.emails.length > 0 && !needsName && (
             <label className="email-toggle">
-              <input type="checkbox" checked={includeEmail} onChange={e => setIncludeEmail(e.target.checked)} />
+              <input type="checkbox" name="include-email" checked={includeEmail} onChange={e => setIncludeEmail(e.target.checked)} />
               <span>
                 Include my email ({verified.emails.join(', ')}). Only if it's already public; it can't be removed later.
               </span>
@@ -567,6 +570,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
             <div className="mono-box" style={{ marginBottom: 12 }}>
               <div className="label">Replace an existing claim?</div>
               <select
+                name="replace-claim"
                 value={replaceIndex === null || replaceIndex === undefined ? '' : String(replaceIndex)}
                 onChange={e => setReplaceIndex(e.target.value === '' ? null : Number(e.target.value))}
                 style={{ marginTop: 6, width: '100%', maxWidth: '100%' }}
@@ -580,7 +584,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
               </select>
               {replacing && newKey && (
                 <label className="checkbox-row" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 8 }}>
-                  <input type="checkbox" checked={oldCompromised} onChange={e => setOldCompromised(e.target.checked)} />
+                  <input type="checkbox" name="old-compromised" checked={oldCompromised} onChange={e => setOldCompromised(e.target.checked)} />
                   <span className="helper prose" style={{ margin: 0 }}>The old key was compromised. It's marked so, and this address can never claim it again.</span>
                 </label>
               )}
@@ -738,6 +742,8 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
       <button className="btn btn-sm" onClick={(e) => copyToClipboard(exportCommand, e)}>copy command</button>
 
       <textarea
+        name="public-key"
+        autoComplete="off"
         className="pgp-input"
         style={{ minHeight: 120, marginTop: 16 }}
         placeholder={`Paste the whole output here:\n\n-----BEGIN PGP PUBLIC KEY BLOCK-----\n…\n-----END PGP PUBLIC KEY BLOCK-----`}
@@ -761,7 +767,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
 
       {keyText.trim() && (
         <label className="email-toggle">
-          <input type="checkbox" checked={withEmail} onChange={e => { setWithEmail(e.target.checked); setStatus(null) }} />
+          <input type="checkbox" name="include-email" checked={withEmail} onChange={e => { setWithEmail(e.target.checked); setStatus(null) }} />
           <span>
             Include my email. Only if it's already public: it can't be removed later.
             {hasEmail && !withEmail && ' This claim has it now; unticked, the updated key leaves it out (older copies stay in chain history).'}
@@ -945,7 +951,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                   <td colSpan={5} style={{ padding: '4px 8px 12px' }}>
                     <div className="row" style={{ alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span className="helper" style={{ margin: 0 }}>Revoke #{a.index} for good? Reason:</span>
-                      <select value={revokeReason} onChange={e => setRevokeReason(e.target.value)}>
+                      <select name="revoke-reason" value={revokeReason} onChange={e => setRevokeReason(e.target.value)}>
                         <option value="">none given</option>
                         <option value="compromised">compromised: the key may be in someone else's hands (this address can't claim it again)</option>
                         <option value="retired">retired: no longer used</option>
