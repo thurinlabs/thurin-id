@@ -903,6 +903,8 @@ body:has(.home-close) .footer { margin-top: 44px; }
 /* ─── Act as yourself: top-bar connect, "this is you", record form ─────── */
 .topbar-connect { display: flex; align-items: center; }
 .topbar-account { text-transform: none; letter-spacing: 0.04em; }
+/* An address inside a Cinzel title or button: Cinzel has no lowercase, so the checksum case needs the mono face. */
+.keep-case { text-transform: none; font-family: var(--mono); letter-spacing: 0.02em; }
 .topbar-network { margin-left: 10px; font-size: 10px; border-color: var(--color-secondary); color: var(--color-secondary); white-space: nowrap; }
 .topbar-connect-btn { background: none; border: 1px solid var(--color-border); padding: 5px 10px; cursor: pointer; }
 .topbar-connect-btn:hover { border-color: var(--color-primary); }

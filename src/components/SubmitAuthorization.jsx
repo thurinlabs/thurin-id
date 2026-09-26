@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { forgetHandoff } from '../handoff'
 import { useRelay } from '../relay'
 import { useWriteContract, useReadContract } from 'wagmi'
-import { createPublicClient, http, stringToHex, recoverTypedDataAddress } from 'viem'
+import { createPublicClient, http, stringToHex, recoverTypedDataAddress, getAddress } from 'viem'
 import { contractErrorText, sameFingerprint,
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
   attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, markCompromisedTypedData,
@@ -30,7 +30,12 @@ const DONE = {
 const VERBS = { attest: 'Publish a claim', reattest: 'Replace a claim', 'update-key': 'Update a key', revoke: 'Revoke a claim', 'set-record': 'Set a record', 'mark-compromised': 'Mark a key compromised' }
 const FNS = { attest: 'attestFor', reattest: 'reattestFor', 'update-key': 'updateKeyFor', revoke: 'revokeFor', 'set-record': 'setRecordFor', 'mark-compromised': 'markCompromisedFor' }
 
-function shortAddr(a) { return a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '' }
+function shortAddr(a) {
+  if (!a) return ''
+  let c = a
+  try { c = getAddress(a) } catch {}
+  return `${c.slice(0, 6)}…${c.slice(-4)}`
+}
 function prettyRecord(kind, value) {
   if (kind === 'thurin.releases') {
     try { const p = JSON.parse(value); if (p.v === 1) return p.releases.map(r => `${r.name}  ${r.date}  sha256 ${r.sha256.slice(0, 16)}…`).join('\n') } catch { /* raw */ }
@@ -185,7 +190,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
     <div className={`step ${isConnected ? 'active' : ''} ${done ? 'done' : ''}`}>
       <div className="step-header">
         <span className={`step-num ${isConnected && !done ? 'active-num' : ''}`}>02 //</span>
-        <span className="step-title">{VERBS[h.op]} for {shortAddr(h.owner)}</span>
+        <span className="step-title">{VERBS[h.op]} for <span className="keep-case">{shortAddr(h.owner)}</span></span>
         {done && <span className="step-badge">✓ published</span>}
       </div>
 
@@ -201,7 +206,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
         <div className="fade-in">
           <div className="mono-box" style={{ marginBottom: 12 }}>
             <div className="label">What will be published</div>
-            <div className="value">Owner: {h.owner}</div>
+            <div className="value">Owner: {getAddress(h.owner)}</div>
             {h.fingerprint && h.op !== 'revoke' && h.op !== 'mark-compromised' && <div className="value">Key: {spacedFingerprint(h.fingerprint)}</div>}
             {h.index !== null && <div className="value">{h.op === 'reattest' ? 'Replaces' : h.op === 'revoke' ? 'Revokes' : h.op === 'set-record' ? 'On' : h.op === 'mark-compromised' ? 'Marks the key compromised on' : 'Updates'} claim #{h.index}{targetFpr ? ` (${targetFpr.slice(0, 8)}…${targetFpr.slice(-8)})` : ''}</div>}
             {h.op === 'set-record' && (
@@ -237,7 +242,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
 
           <div className="row">
             <button className="btn btn-primary" onClick={handlePublish} disabled={!isConnected || !check?.ok || status?.type === 'info'}>
-              {status?.type === 'info' ? 'Publishing…' : `Publish for ${shortAddr(h.owner)}`}
+              {status?.type === 'info' ? 'Publishing…' : <>Publish for <span className="keep-case">{shortAddr(h.owner)}</span></>}
             </button>
             {RELAYER_URL && (
               <button className="btn" onClick={handleRelay} disabled={!check?.ok || status?.type === 'info'} title="The Thurin.id relay pays the fee, within its daily budget">

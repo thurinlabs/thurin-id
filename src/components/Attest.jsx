@@ -1078,7 +1078,7 @@ export default function Attest() {
             </p>
             <p className="helper" style={{ marginBottom: 24 }}>
               Connect that wallet, check the summary, and publish. Nothing to paste. Anyone can make a link like this,
-              so publish only if the key it names is yours: <code>{handoff.fingerprint}</code>.
+              so publish only if the key it names is yours: <code>{spacedFingerprint(handoff.fingerprint)}</code>.
             </p>
             {wrongWallet && (
               <div className="status err" style={{ marginBottom: 24 }}>
