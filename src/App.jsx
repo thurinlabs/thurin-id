@@ -749,7 +749,10 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
       {tab !== 'records' && (
       <div className="detail-summary">
         <div className="detail-label">Claims ({claims.length})</div>
-        {activeClaims.length > 0 ? (
+        {claims.length > 0 && activeClaims.length === 0 && (
+          <div className="status info" style={{ marginTop: 0, marginBottom: 12 }}>No active claim for this fingerprint.</div>
+        )}
+        {claims.length > 0 ? (
           <div className="attestation-table-wrap stack">
             <table className="attestation-table stack">
               <thead>
@@ -798,7 +801,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
           </div>
         ) : (
           <div className="status info" style={{ marginTop: 0 }}>
-            No active claim for this fingerprint.
+            Nobody has claimed this fingerprint.
             <div style={{ marginTop: 8 }}>
               <a href="/attest" className="fingerprint-link">
                 Add your key →
