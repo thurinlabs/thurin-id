@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { forgetHandoff } from '../handoff'
+import { contractErrorText } from '@thurinlabs/identity-kit'
 import { useWriteContract } from 'wagmi'
 import { createPublicClient, http } from 'viem'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL } from '../wagmiConfig'
@@ -33,7 +34,7 @@ export default function SetRecordPanel({ handoff: h, isConnected }) {
       if (receipt.status === 'success') { setStatus({ type: 'ok', msg: '✓ Record set.' }); setDone(true) }
       else setStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
     } catch (err) {
-      setStatus({ type: 'err', msg: err.shortMessage || err.message })
+      setStatus({ type: 'err', msg: contractErrorText(err) ?? err.shortMessage ?? err.message })
     }
   }
 

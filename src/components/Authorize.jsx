@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useBalance, useSignTypedData, useReadContract } from 'wagmi'
+import { useRelay } from '../relay'
 import { recoverTypedDataAddress } from 'viem'
 import { attestTypedData, reattestTypedData, updateKeyTypedData } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, NETWORK } from '../wagmiConfig'
@@ -8,9 +9,8 @@ import { encodeHandoff } from '../handoff'
 // The empty-wallet exit from a publish step. Instead of a transaction the wallet signs the
 // write as EIP-712 typed data (free), and the result is the same hand-off the CLI makes with
 // `--authorize`: a link anyone can publish, a file for `thurin submit`, or one click to
-// the Thurin.id relay. The owner can't recall it before the deadline, so that is said out loud.
+// the Thurin.id relay.
 
-const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || ''
 const DEADLINES = [{ label: '1 hour', s: 3600 }, { label: '1 day', s: 86400 }, { label: '7 days', s: 7 * 86400 }]
 
 function fmtDate(unix) { return new Date(unix * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) }
@@ -25,9 +25,10 @@ export function useIsEmpty(address) {
 /**
  * op: 'attest' | 'reattest' | 'update-key'
  * fields: { fingerprint, key, signature?, index?, includeEmail }
- * onPublished(hash): the relayer path succeeded
+ * onPublished(hash): the relay path succeeded
  */
 export default function Authorize({ address, op, fields, onPublished }) {
+  const RELAYER_URL = useRelay()
   const [deadlineS, setDeadlineS] = useState(DEADLINES[2].s)
   const [handoff, setHandoff] = useState(null)   // once signed
   const [status, setStatus] = useState(null)
@@ -114,6 +115,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
       <div className="label">Signed. Anyone can publish this until {fmtDate(handoff.authorization.deadline)}</div>
       <p className="helper">
         {RELAYER_URL ? 'Three' : 'Two'} ways to get it on-chain. Whoever does it pays the fee; the claim is yours either way.
+        Changed your mind? Cancel unused permissions in your wallet menu, up top.
       </p>
       <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
         {RELAYER_URL && (

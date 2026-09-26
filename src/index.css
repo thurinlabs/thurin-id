@@ -916,6 +916,12 @@ a.proof-link:hover {
 }
 .account-menu-item + .account-menu-item { border-top: 1px solid var(--color-border); }
 .account-menu-item:hover, .account-menu-item:focus { color: var(--color-primary); outline: none; background: var(--color-surface-deep); }
+.account-menu-note { border-top: 1px solid var(--color-border); padding: 10px 12px; max-width: 260px; font-size: 13px; line-height: 1.5; color: var(--color-text-muted); }
+.account-menu-note p { margin: 0 0 10px; }
+.account-menu-note.ok { color: var(--color-primary); }
+.account-menu-note.err { color: var(--color-error); }
+.account-menu-actions { display: flex; gap: 8px; }
+.account-menu-actions .btn { padding: 6px 10px; font-size: 12px; white-space: nowrap; }
 
 /* ─── Footer: which RPC sees the reads, and a way to use your own ────────── */
 .footer-left { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }

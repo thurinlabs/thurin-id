@@ -6,7 +6,7 @@ import * as openpgp from 'openpgp'
 import { createPublicClient, http, toHex, encodeFunctionData } from 'viem'
 import { asArmor } from '../payload'
 import { kindLabel } from '../recordLabels'
-import { hasEmailUserID, sameFingerprint, parsePgpKey, identifyProof, fingerprintToBytes, verifyAttestation, readClaims, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
+import { contractErrorText, hasEmailUserID, keyProblemText, sameFingerprint, parsePgpKey, identifyProof, fingerprintToBytes, verifyAttestation, readClaims, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK, readClient } from '../wagmiConfig'
 import { readHandoff, forgetHandoff } from '../handoff'
 import SubmitAuthorization from './SubmitAuthorization'
@@ -158,11 +158,16 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         const issuer = sigPackets[0]?.issuerKeyID
         let publicKey = null
         let ownKeyReason = null // the signer's key is in the paste, but the signature didn't verify
+        let keyProblem = null   // …because of the key itself (expired, revoked, unsupported): signing again won't help
         for (const k of keys) {
           const v = await verifyStatementSignature({ key: k.armor(), signature: sig, address })
           if (v.verified) { publicKey = k; break }
-          if (issuer && k.getKeys(issuer).length) ownKeyReason = v.reason || 'verification failed'
+          if (issuer && k.getKeys(issuer).length) {
+            ownKeyReason = v.reason || 'verification failed'
+            keyProblem = keyProblemText(await verifyAttestation({ pgpPublicKey: k.armor(), pgpSignature: sig, fingerprint: k.getFingerprint(), ethAddress: address }))
+          }
         }
+        if (!publicKey && keyProblem) throw new Error(`${keyProblem.sentence} ${keyProblem.fix}`)
         if (!publicKey) throw new Error(ownKeyReason
           ? `the key that signed is in the paste, but its signature doesn't verify (${ownKeyReason}). If \`echo test | gpg --clearsign | gpg --verify\` says BAD too, it's your gpg setup, not this page. Otherwise check the line wasn't changed: it has to be "${gpgPayload(address)}".`
           : `the signature doesn't match the key in the paste. Run the whole command again and paste all of its output.`)
@@ -512,7 +517,7 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
         setPublishStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
       }
     } catch (err) {
-      setPublishStatus({ type: 'err', msg: err.shortMessage || err.message })
+      setPublishStatus({ type: 'err', msg: contractErrorText(err) ?? err.shortMessage ?? err.message })
     }
   }
 
@@ -714,7 +719,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
         setStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
       }
     } catch (err) {
-      setStatus({ type: 'err', msg: err.shortMessage || err.message })
+      setStatus({ type: 'err', msg: contractErrorText(err) ?? err.shortMessage ?? err.message })
     }
   }
 
@@ -852,7 +857,7 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
       setRevokeStatus(s => ({ ...s, [index]: { type: 'ok', msg: 'Revoked.' } }))
       refetch()
     } catch (err) {
-      setRevokeStatus(s => ({ ...s, [index]: { type: 'err', msg: err.shortMessage || err.message } }))
+      setRevokeStatus(s => ({ ...s, [index]: { type: 'err', msg: contractErrorText(err) ?? err.shortMessage ?? err.message } }))
     }
   }
 

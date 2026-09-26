@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useReadContract, useWriteContract, usePublicClient } from 'wagmi'
-import { pageRecords, parseRecord, checkRecordValue } from '@thurinlabs/identity-kit'
+import { contractErrorText, pageRecords, parseRecord, checkRecordValue } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, EXPLORER_URL } from '../wagmiConfig'
 import { KIND_LABEL } from '../recordLabels'
 
@@ -170,7 +170,7 @@ function RecordForm({ index, armoredKey, fingerprint, existing, initialKind, ini
       if (receipt.status === 'success') { setStatus({ type: 'ok', msg: '✓ Record set.', hash }); onDone() }
       else setStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
     } catch (err) {
-      setStatus({ type: 'err', msg: err.shortMessage || err.message })
+      setStatus({ type: 'err', msg: contractErrorText(err) ?? err.shortMessage ?? err.message })
     }
   }
 
@@ -220,7 +220,7 @@ function ClearButton({ index, kind, onDone }) {
       const receipt = await client.waitForTransactionReceipt({ hash, pollingInterval: 4_000 })
       if (receipt.status !== 'success') throw new Error(`The transaction failed, so nothing changed. Tx: ${hash}`)
       onDone()
-    } catch (e) { setErr(e.shortMessage || e.message); setBusy(false); setArm(false) }
+    } catch (e) { setErr(contractErrorText(e) ?? e.shortMessage ?? e.message); setBusy(false); setArm(false) }
   }
   if (!arm) return <button className="copy-btn" onClick={() => setArm(true)}>clear</button>
   return (

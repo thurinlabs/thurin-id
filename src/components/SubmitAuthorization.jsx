@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { forgetHandoff } from '../handoff'
+import { useRelay } from '../relay'
 import { useWriteContract, useReadContract } from 'wagmi'
 import { createPublicClient, http, stringToHex, recoverTypedDataAddress } from 'viem'
-import { sameFingerprint,
+import { contractErrorText, sameFingerprint,
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
   attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, markCompromisedTypedData,
 } from '@thurinlabs/identity-kit'
@@ -14,9 +15,6 @@ import { kindLabel } from '../recordLabels'
 // recovers the signer, checks the nonce and deadline against the chain, verifies the PGP
 // side the way a lookup would, and then lets *any* connected wallet pay for the `…For` call.
 
-// A relayer (`thurin relay`) that pays on the viewer's behalf. Unset = no button; the
-// viewer's own wallet is always the other path.
-const RELAYER_URL = import.meta.env.VITE_RELAYER_URL || ''
 
 // What happened, once published, in the words of each operation.
 const DONE = {
@@ -42,9 +40,10 @@ function fmtDate(unix) { return new Date(unix * 1000).toLocaleString(undefined, 
 function timeLeft(unix) {
   const s = unix - Math.floor(Date.now() / 1000)
   if (s <= 0) return null
-  if (s < 3600) return `${Math.max(1, Math.floor(s / 60))} min`
-  if (s < 86400) return `${Math.floor(s / 3600)} h`
-  return `${Math.floor(s / 86400)} day${s >= 172800 ? 's' : ''}`
+  const m = Math.max(1, Math.round(s / 60)), h = Math.round(s / 3600), d = Math.round(s / 86400)
+  if (m < 60) return `${m} min`
+  if (h < 24) return `${h} h`
+  return `${d} day${d === 1 ? '' : 's'}`
 }
 
 function typedDataFor(h) {
@@ -79,6 +78,7 @@ function argsFor(h) {
 }
 
 export default function SubmitAuthorization({ handoff: h, isConnected }) {
+  const RELAYER_URL = useRelay()   // null unless it publishes to this site's network
   const [check, setCheck] = useState(null)     // { ok, problems: [], names, proofs, bytes, signer }
   const [status, setStatus] = useState(null)
   const [txHash, setTxHash] = useState(null)
@@ -114,7 +114,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
       }
       if (chainNonce !== undefined && Number(chainNonce) !== h.authorization.nonce) {
         problems.push(Number(chainNonce) > h.authorization.nonce
-          ? 'This permission was already used, or the owner has published something since signing it. Ask them for a new one.'
+          ? 'This permission was already used or cancelled, or the owner has published something since signing it. Ask them for a new one.'
           : 'An earlier permission from this owner isn\'t published yet. Publish that one first.')
       }
       if (claimsKey && keyStatus === 'compromised') problems.push(`${shortAddr(h.owner)} revoked this key as compromised, so the registry won't take a new claim on it.`)
@@ -173,7 +173,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
       if (receipt.status === 'success') { setStatus({ type: 'ok', msg: '✓ Published.' }); setDone(true); refetchNonce() }
       else setStatus({ type: 'err', msg: `The transaction failed, so nothing changed. Tx: ${hash}` })
     } catch (err) {
-      setStatus({ type: 'err', msg: err.shortMessage || err.message })
+      setStatus({ type: 'err', msg: contractErrorText(err) ?? err.shortMessage ?? err.message })
     }
   }
 
@@ -230,8 +230,8 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
           )}
 
           <p className="helper" style={{ marginTop: 12 }}>
-            Your wallet pays the fee{h.op === 'attest' || h.op === 'reattest' ? <>; the claim lands under {shortAddr(h.owner)}, not you</> : ''}. The owner can't recall this
-            link before it expires, and it can be used once.
+            Your wallet pays the fee{h.op === 'attest' || h.op === 'reattest' ? <>; the claim lands under {shortAddr(h.owner)}, not you</> : ''}. It can be used once, until
+            it expires; the owner can cancel it sooner from their wallet menu.
           </p>
 
           <div className="row">
