@@ -998,6 +998,20 @@ function Explorer() {
 
       {!submitted && (
         <>
+          <section className="home-rules">
+            <div className="home-rule">
+              <h3>Nothing in the middle</h3>
+              <p>No Thurin Labs server holds your identity. It lives on Ethereum, a public record no company controls, and your browser checks it directly.</p>
+            </div>
+            <div className="home-rule">
+              <h3>Your PGP key stays put</h3>
+              <p>It is published on-chain where you put it, so no one can swap it or change it behind your back. gpg, git, and your mail client can fetch it from <a href="https://keys.thurin.id" target="_blank" rel="noopener noreferrer">keys.thurin.id</a>.</p>
+            </div>
+            <div className="home-rule">
+              <h3>Your email stays private</h3>
+              <p>Emails stay off your key and out of your signature unless you choose to include them. Nothing about you goes public that you didn't put there.</p>
+            </div>
+          </section>
           {/* An image our server draws: showing it asks no one but thurin.id. */}
           <section className="home-cards">
             <a href="/ens/thurinlabs.eth" className="home-card-image">
@@ -1007,20 +1021,6 @@ function Explorer() {
           <p className="home-cards-link">
             <a href={`${links.docs}/#/sdk?id=readme-card`} target="_blank" rel="noopener noreferrer">Get your own card →</a>
           </p>
-          <section className="home-rules">
-            <div className="home-rule">
-              <h3>Nothing in the middle.</h3>
-              <p>No Thurin Labs server holds your identity. It lives on Ethereum, a public record no company controls, and your browser checks it directly.</p>
-            </div>
-            <div className="home-rule">
-              <h3>Your PGP key stays put.</h3>
-              <p>It is published on-chain where you put it, so no one can swap it or change it behind your back. gpg, git, and your mail client can fetch it from keys.thurin.id.</p>
-            </div>
-            <div className="home-rule">
-              <h3>Your email stays private.</h3>
-              <p>Emails stay off your key and out of your signature unless you choose to include them. Nothing about you goes public that you didn't put there.</p>
-            </div>
-          </section>
           <section className="home-close">
             <p><a href="/attest">Adding your key</a> takes a few minutes and one transaction.<br className="home-close-break" /> Or do all of it <a href={`${links.docs}/#/cli`} target="_blank" rel="noopener noreferrer">from a terminal, on your own node</a>.</p>
             <a className="home-roadmap" href={`${links.docs}/#/roadmap`} target="_blank" rel="noopener noreferrer">What’s coming: the roadmap →</a>
