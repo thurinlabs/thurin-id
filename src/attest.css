@@ -68,6 +68,9 @@
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
 
+/* Room for the scrollbar on every page, so the column doesn't shift between short and long pages. */
+html { scrollbar-gutter: stable; }
+
 html, body, #root {
   height: 100%;
   background: var(--color-bg);
