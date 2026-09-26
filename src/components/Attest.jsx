@@ -68,8 +68,8 @@ const MAX_PUBKEY_BYTES = 16384
 const PICK_SIGNING_KEY = `F=$(gpg -K --with-colons | awk -F: '$1=="sec"&&$12~/S/{s=1}s&&$1=="fpr"{print $10;exit}')`
 const EXPORT_OPTIONS = 'export-minimal,no-export-attributes'
 
-// Lean format: a detached text-mode signature over the line (no trailing line break) and the key
-// without SSH-only subkeys. Emails stay in the export so "Include my email" works without
+// Lean format: a detached text-mode signature over the line (no trailing line break) and the key,
+// every subkey included. Emails stay in the export so "Include my email" works without
 // re-running; the page leaves them out otherwise.
 function signCommand(address, key) {
   const sign = `printf '%s' "${gpgPayload(address)}" | gpg --detach-sign --textmode --disable-signer-uid --armor`
@@ -189,7 +189,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
   }, [paste, address, wantedFingerprint])
 
   // What gets published follows the email switch: the key as raw bytes (emails left out unless
-  // ticked, SSH-only subkeys left out, newest self-signatures only) and the signature alone; the
+  // ticked, newest self-signatures only) and the signature alone; the
   // line it signs is rebuilt by every reader. A clearsign that signed a trailing line break (made
   // with `echo`) is published whole, so gpg can still verify what the registry returns.
   useEffect(() => {
@@ -666,7 +666,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
         setStatus({ type: 'err', msg: `That key's fingerprint (${info.fingerprint}) is not this claim's key.` })
         return
       }
-      // Lean format, as in the sign step: raw bytes, emails out unless ticked, SSH-only subkeys out.
+      // Lean format, as in the sign step: raw bytes, emails out unless ticked.
       const lean = await leanKey(text, { includeEmail: withEmail })
       if (cancelled) return
       if (!lean) {
