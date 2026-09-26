@@ -3,6 +3,7 @@ import { useReadContract, useWriteContract, usePublicClient } from 'wagmi'
 import { contractErrorText, pageRecords, parseRecord, checkRecordValue } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, EXPLORER_URL } from '../wagmiConfig'
 import { KIND_LABEL } from '../recordLabels'
+import { spacedFingerprint } from '../format'
 
 // Records on the claim this page speaks for, from `recordsOf`: Thurin's kinds first, each rendered
 // its own way, then anyone else's (reverse-dot names) as plain text, in the order they were set.
@@ -71,7 +72,7 @@ function Body({ r }) {
     case 'successor':
       return (
         <>
-          <div className="value"><a href={`/pgp/${d.fingerprint.toUpperCase()}`} className="fingerprint-link">{d.fingerprint.toUpperCase()}</a></div>
+          <div className="value"><a href={`/pgp/${d.fingerprint.toUpperCase()}`} className="fingerprint-link">{spacedFingerprint(d.fingerprint)}</a></div>
           <div className="value prose" style={{ color: 'var(--color-text-muted)', marginTop: 4 }}>The key that replaces this one.</div>
         </>
       )

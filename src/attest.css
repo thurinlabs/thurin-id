@@ -492,7 +492,6 @@ pre {
 
 .footer-version {
   color: var(--color-text-muted);
-  opacity: 0.6;
 }
 
 .footer-columns {
@@ -668,7 +667,10 @@ pre {
 }
 
 .att-actions-cell { width: 1%; white-space: nowrap; }
-.att-actions { display: flex; gap: 6px; }
+/* A badge with its reason ("revoked · retired") wraps rather than widen the table past its box. */
+.attestation-table .status-badge { white-space: normal; max-width: 8.5rem; line-height: 1.4; }
+.att-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.att-action-note { font-size: 12px; line-height: 1.5; color: var(--color-text-muted); }
 .att-actions .btn { flex: 0 0 auto; padding: 6px 10px; }
 
 /* Claims table → stacked cards on narrow screens (scoped to the /attest claims list) */
@@ -687,7 +689,9 @@ pre {
   .step .attestation-table tr.att-note-row,
   .step .attestation-table tr.att-update-row { padding-top: 0; border-bottom: none; }
   .step .attestation-table td { border: none; padding: 3px 0; }
-  .step .attestation-table td.att-index { display: none; }
+  .step .attestation-table td.att-index { display: inline-block; width: auto; margin-right: 10px; color: var(--color-text-muted); }
+  .step .attestation-table td.att-index::before { content: "#"; }
+  .step .attestation-table td.att-index + td { display: inline-block; width: calc(100% - 3rem); }
   .step .attestation-table td.att-date { display: inline-block; width: auto; margin-right: 12px; }
   .step .attestation-table td.att-date + td { display: inline-block; width: auto; }
   .step .att-actions-cell { white-space: normal; width: 100%; padding-top: 8px; }

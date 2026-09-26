@@ -6,6 +6,7 @@ import * as openpgp from 'openpgp'
 import { createPublicClient, http, toHex, encodeFunctionData } from 'viem'
 import { asArmor } from '../payload'
 import { kindLabel } from '../recordLabels'
+import { spacedFingerprint, formatDate, claimStateLabel } from '../format'
 import { contractErrorText, hasEmailUserID, keyProblemText, sameFingerprint, parsePgpKey, identifyProof, fingerprintToBytes, verifyAttestation, readClaims, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK, readClient } from '../wagmiConfig'
 import { readHandoff, forgetHandoff } from '../handoff'
@@ -76,10 +77,6 @@ function signCommand(address, key) {
   return key
     ? `${sign} -u "${key}"; ${exp} "${key}"`
     : `${PICK_SIGNING_KEY}; ${sign} -u $F; ${exp} $F`
-}
-
-function spacedFingerprint(fpr) {
-  return fpr.match(/.{4}/g).join(' ')
 }
 
 // ─── Step 1: Connect Wallet ──────────────────────────────────────────────────
@@ -635,13 +632,6 @@ function StepAttest({ active, done, attestation, onPublish, activeClaims = [], r
 
 // ─── Your claims ─────────────────────────────────────────────────────────────
 
-function formatDate(ts) {
-  if (!ts) return '—'
-  return new Date(ts * 1000).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
-}
-
 /** The connected wallet's claims, newest first, read and checked by the kit. */
 function useMyAttestations(address) {
   const { data, refetch, isFetched } = useQuery({
@@ -809,6 +799,8 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
   const [confirmRevoke, setConfirmRevoke] = useState(null)   // index being confirmed
   const [revokeReason, setRevokeReason] = useState('')
   const [emailByIndex, setEmailByIndex] = useState({}) // index → true when the on-chain key has an email user ID
+  // An ended claim can't be marked compromised while the same key has an active claim here.
+  const lockedByActive = (a) => a.revoked && a.revokeReason !== 'compromised' && attestations.some(o => !o.revoked && sameFingerprint(o.fingerprint, a.fingerprint))
   const [updating, setUpdating] = useState(handoff ? handoff.index : null) // index of the claim whose key is being updated
   useEffect(() => { if (handoff) setUpdating(handoff.index) }, [handoff])   // the hand-off arrives once the right wallet is connected
   const { writeContractAsync } = useWriteContract()
@@ -888,15 +880,13 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
               <tr>
                 <td className="att-index">{a.index}</td>
                 <td>
-                  <a href={`/pgp/${a.fingerprint.toUpperCase()}`} rel="noopener noreferrer" style={{ color: 'inherit' }}>
+                  <a href={`/pgp/${a.fingerprint.toUpperCase()}`} className="fingerprint-link">
                     {a.fingerprint.toUpperCase().slice(0, 8)}...{a.fingerprint.toUpperCase().slice(-8)}
                   </a>
                 </td>
                 <td className="att-date">{formatDate(a.createdAt)}</td>
                 <td>
-                  <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`} title={a.revokeReason === 'compromised' ? 'Its key was marked compromised' : a.revokeReason && a.state === 'revoked' ? `Reason: ${a.revokeReason}` : undefined}>
-                    {a.state === 'replaced' ? `replaced → #${a.replacedBy}` : a.revoked ? 'revoked' : 'active'}
-                  </span>
+                  <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`}>{claimStateLabel(a)}</span>
                 </td>
                 <td className="att-actions-cell">
                   {!a.revoked && (
@@ -918,18 +908,21 @@ function YourAttestations({ address, attestations, count, refetch, onCreate, han
                       <button
                         className="btn btn-sm"
                         onClick={() => setConfirmRevoke(confirmRevoke === a.index ? null : a.index)}
-                        disabled={revokeStatus[a.index]?.type === 'info' || attestations.some(o => !o.revoked && sameFingerprint(o.fingerprint, a.fingerprint))}
-                        title={attestations.some(o => !o.revoked && sameFingerprint(o.fingerprint, a.fingerprint)) ? 'This key has an active claim here; revoke that one as compromised' : 'For a key you later find was stolen'}
+                        disabled={revokeStatus[a.index]?.type === 'info' || lockedByActive(a)}
                       >
                         {revokeStatus[a.index]?.type === 'info' ? 'Marking…' : 'Mark compromised'}
                       </button>
+
                     </div>
                   )}
                 </td>
               </tr>
-              {(revokeStatus[a.index]?.type === 'err' || (!a.revoked && emailByIndex[a.index])) && (
+              {(revokeStatus[a.index]?.type === 'err' || (!a.revoked && emailByIndex[a.index]) || lockedByActive(a)) && (
                 <tr className="att-note-row">
                   <td colSpan={5} style={{ padding: '0 16px 10px' }}>
+                    {lockedByActive(a) && (
+                      <div className="att-action-note">Mark compromised is off: this key has an active claim here. Revoke that one as compromised instead.</div>
+                    )}
                     {!a.revoked && emailByIndex[a.index] && (
                       <div className="lookup-detected" style={{ fontSize: '12px', margin: 0 }}
                         title="The key stored on this claim carries an email user ID. Update the key with 'Include my email' unticked to publish a copy without it; the old copy stays in chain history.">
@@ -1067,7 +1060,7 @@ export default function Attest() {
 
   return (
     <>
-      <div className="attest-intro" style={{ maxWidth: 640, margin: '0 auto', padding: '0 16px' }}>
+      <div className="attest-intro" style={{ maxWidth: 640 }}>
         {handoffError ? (
           <div className="status err" style={{ marginBottom: 24 }}>{handoffError}</div>
         ) : handoff && !handoffNetworkOk ? (

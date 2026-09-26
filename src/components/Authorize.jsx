@@ -115,7 +115,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
       <div className="label">Signed. Anyone can publish this until {fmtDate(handoff.authorization.deadline)}</div>
       <p className="helper">
         {RELAYER_URL ? 'Three' : 'Two'} ways to get it on-chain. Whoever does it pays the fee; the claim is yours either way.
-        Changed your mind? Cancel unused permissions in your wallet menu, up top.
+        Changed your mind? <code>thurin cancel</code> stops every permission you haven't used yet.
       </p>
       <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
         {RELAYER_URL && (

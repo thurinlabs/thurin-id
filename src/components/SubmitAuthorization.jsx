@@ -9,6 +9,7 @@ import { contractErrorText, sameFingerprint,
 } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK } from '../wagmiConfig'
 import { kindLabel } from '../recordLabels'
+import { spacedFingerprint } from '../format'
 
 // Publish someone else's authorized write. The owner signed the typed data in the CLI
 // (`thurin attest --authorize`); this panel rebuilds that typed data from the hand-off,
@@ -201,7 +202,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
           <div className="mono-box" style={{ marginBottom: 12 }}>
             <div className="label">What will be published</div>
             <div className="value">Owner: {h.owner}</div>
-            {h.fingerprint && h.op !== 'revoke' && h.op !== 'mark-compromised' && <div className="value">Key: {h.fingerprint}</div>}
+            {h.fingerprint && h.op !== 'revoke' && h.op !== 'mark-compromised' && <div className="value">Key: {spacedFingerprint(h.fingerprint)}</div>}
             {h.index !== null && <div className="value">{h.op === 'reattest' ? 'Replaces' : h.op === 'revoke' ? 'Revokes' : h.op === 'set-record' ? 'On' : h.op === 'mark-compromised' ? 'Marks the key compromised on' : 'Updates'} claim #{h.index}{targetFpr ? ` (${targetFpr.slice(0, 8)}…${targetFpr.slice(-8)})` : ''}</div>}
             {h.op === 'set-record' && (
               <>
@@ -231,7 +232,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
 
           <p className="helper" style={{ marginTop: 12 }}>
             Your wallet pays the fee{h.op === 'attest' || h.op === 'reattest' ? <>; the claim lands under {shortAddr(h.owner)}, not you</> : ''}. It can be used once, until
-            it expires; the owner can cancel it sooner from their wallet menu.
+            it expires; the owner can cancel it sooner with <code>thurin cancel</code>.
           </p>
 
           <div className="row">

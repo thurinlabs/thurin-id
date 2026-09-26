@@ -21,6 +21,7 @@ import {
   claimFateText,
 } from '@thurinlabs/identity-kit'
 import { siteLinks } from './links'
+import { spacedFingerprint, formatDate, formatIsoDate, claimStateLabel } from './format'
 import Attest from './components/Attest'
 import EnsRecordLine from './components/EnsRecordLine'
 import AccountMenu from './components/AccountMenu'
@@ -46,13 +47,6 @@ function detectInputType(value) {
 
 function safeNormalize(name) {
   try { return normalize(name) } catch { return null }
-}
-
-function formatDate(unixTimestamp) {
-  if (!unixTimestamp) return '—'
-  return new Date(unixTimestamp * 1000).toLocaleDateString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  })
 }
 
 function copyToClipboard(text, e) {
@@ -230,9 +224,8 @@ function Topbar({ isAttest }) {
         </svg>
         <span className="topbar-wordmark">Thurin<span className="topbar-wordmark-accent">.id</span></span>
         {NETWORK !== 'mainnet' && (
-          <span className="status-badge" title={`Reading the ${NETWORK} registry. Nothing here touches mainnet.`}
-            style={{ marginLeft: 10, fontSize: 10, borderColor: 'var(--color-secondary)', color: 'var(--color-secondary)' }}>
-            {NETWORK} testnet
+          <span className="status-badge topbar-network" title={`Reading the ${NETWORK} registry. Nothing here touches mainnet.`}>
+            {NETWORK}<span className="topbar-network-word"> testnet</span>
           </span>
         )}
       </a>
@@ -394,12 +387,12 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
         <div className="value">{keyInfo.algorithm}</div>
         <div style={{ marginTop: 4 }}>
           <span style={{ color: 'var(--color-text-muted)' }}>Created: </span>
-          <span className="value">{keyInfo.created ? new Date(keyInfo.created).toLocaleDateString() : '—'}</span>
+          <span className="value">{formatIsoDate(keyInfo.created)}</span>
         </div>
         {keyInfo.expires && (
           <div>
             <span style={{ color: 'var(--color-text-muted)' }}>Expires: </span>
-            <span className="value">{new Date(keyInfo.expires).toLocaleDateString()}</span>
+            <span className="value">{formatIsoDate(keyInfo.expires)}</span>
           </div>
         )}
         {keyInfo.subkeys.length > 0 && (
@@ -546,7 +539,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
         {latest && !latest.revoked && (
           <div className="mono-box" style={{ marginTop: 12 }}>
             <div className="label">current fingerprint</div>
-            <div className="value">{latest.fingerprint.toUpperCase()}</div>
+            <div className="value">{spacedFingerprint(latest.fingerprint)}</div>
             {latest.verification && check && (
               <>
                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -636,7 +629,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
                     <td className="att-date">{formatDate(a.createdAt)}</td>
                     <td>
                       <span className={`status-badge ${a.revoked ? 'revoked' : 'active'}`} title={claimFateText(fate) ?? undefined}>
-                        {fate.state === 'replaced' ? `replaced → #${fate.by}` : fate.state}
+                        {claimStateLabel(a)}
                       </span>
                     </td>
                     <td>
@@ -738,7 +731,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
       <div className="detail-header">
         <div className="detail-label">PGP Fingerprint</div>
         <div className="detail-address-row">
-          <span className="detail-address">{fingerprint.toUpperCase()}</span>
+          <span className="detail-address">{spacedFingerprint(fingerprint)}</span>
           <button className="copy-btn" onClick={(e) => copyToClipboard(fingerprint.toUpperCase(), e)}>copy</button>
         </div>
       </div>
@@ -795,7 +788,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
                     <tr key={key} style={{ opacity: 0.5 }}>
                       <td><ClaimAddressCell address={claim.address} /></td>
                       <td className="att-date">{formatDate(claim.createdAt)}</td>
-                      <td><span className="status-badge revoked">{claim.state === 'replaced' ? `replaced → #${claim.replacedBy}` : 'revoked'}</span></td>
+                      <td><span className="status-badge revoked">{claimStateLabel(claim)}</span></td>
                       <td></td>
                     </tr>
                   )
@@ -976,7 +969,7 @@ function Explorer() {
         <div className="lookup-input-row">
           <input
             className="text-input"
-            placeholder="ENS name, Ethereum address, or PGP fingerprint"
+            placeholder="ENS name, address, fingerprint, or key ID"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
