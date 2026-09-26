@@ -488,22 +488,17 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
             <div className="detail-address-row">
               <span className="detail-address">{address}</span>
               <button className="copy-btn" onClick={(e) => copyToClipboard(address, e)}>copy</button>
+            </div>
+            {ensName && <div className="detail-ens">{ensName}</div>}
+            <div className="detail-links">
               {EXPLORER_URL && (
-                <a
-                  className="detail-link"
-                  href={`${EXPLORER_URL}/address/${address}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  etherscan
-                </a>
+                <a className="detail-link" href={`${EXPLORER_URL}/address/${address}`} target="_blank" rel="noopener noreferrer">etherscan</a>
               )}
               {ensName && (
                 <a className="detail-link" href={`https://app.ens.domains/${ensName}`} target="_blank" rel="noopener noreferrer">ens</a>
               )}
               <a className="detail-link" href={`https://efp.app/${address}`} target="_blank" rel="noopener noreferrer">efp</a>
             </div>
-            {ensName && <div className="detail-ens">{ensName}</div>}
             {isSelf && <div className="detail-self" title="The connected wallet is this address. Records and the ENS record can be set from this page.">this is you</div>}
           </div>
         </div>

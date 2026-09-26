@@ -335,6 +335,13 @@ pre.value.prose { padding: 0; }
   margin-top: 6px;
 }
 
+.detail-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
 .copy-btn,
 .detail-link {
   display: inline-flex;
