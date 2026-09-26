@@ -73,7 +73,7 @@ const EXPORT_OPTIONS = 'export-minimal,no-export-attributes'
 // re-running; the page leaves them out otherwise.
 function signCommand(address, key) {
   const sign = `printf '%s' "${gpgPayload(address)}" | gpg --detach-sign --textmode --disable-signer-uid --armor`
-  const exp = `gpg --export-options ${EXPORT_OPTIONS} --export-filter drop-subkey='usage = a' --armor --export`
+  const exp = `gpg --export-options ${EXPORT_OPTIONS} --armor --export`
   return key
     ? `${sign} -u "${key}"; ${exp} "${key}"`
     : `${PICK_SIGNING_KEY}; ${sign} -u $F; ${exp} $F`
@@ -251,7 +251,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
       if (cancelled) return
       const bytes = keyBytes + (typeof sigBytes === 'string' ? new TextEncoder().encode(sigBytes).length : sigBytes.length)
       const before = new TextEncoder().encode(full).length + new TextEncoder().encode(verified.sig).length
-      setPreview({ kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofsPublished, proofsTotal, otherNotes, bytes, before })
+      setPreview({ kept: lean.kept, removed: lean.removed, proofsPublished, proofsTotal, otherNotes, bytes, before })
       setStatus(null)
       onVerified({
         pgpSig: verified.sig,
@@ -398,9 +398,6 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
                   Add {preview.proofsTotal === 1 ? 'it' : 'them'} to the published name (<a href="https://docs.thurin.id/#/guides/gnupg" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>how</a>),
                   then run the command again, or publish now and update the key later.
                 </div>
-              )}
-              {preview.droppedSubkeys?.length > 0 && (
-                <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (SSH-only subkey): {preview.droppedSubkeys.map(f => `${f.slice(0, 4)} ${f.slice(4, 8)} …`).join(', ')}</div>
               )}
               <div className="value" style={{ color: 'var(--color-text-muted)' }}>{(preview.bytes / 1024).toFixed(1)} KB{preview.before ? ` on-chain (${(preview.before / 1024).toFixed(1)} KB as pasted text)` : ''}</div>
             </div>
@@ -681,7 +678,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
       const published = await parsePgpKey(lean.binary)
       const proofs = (published?.notations || []).filter(n => identifyProof(n)).length
       const otherNotes = (published?.notations || []).filter(n => !identifyProof(n)).map(n => `${n.name}=${n.value}`)
-      setPreview({ keyHex: toHex(lean.binary), kept: lean.kept, removed: lean.removed, droppedSubkeys: lean.droppedSubkeys, proofs, otherNotes, bytes: lean.binary.length, before: new TextEncoder().encode(text).length })
+      setPreview({ keyHex: toHex(lean.binary), kept: lean.kept, removed: lean.removed, proofs, otherNotes, bytes: lean.binary.length, before: new TextEncoder().encode(text).length })
     })()
     return () => { cancelled = true }
   }, [keyText, claim.fingerprint, withEmail])
@@ -713,7 +710,7 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
     }
   }
 
-  const exportCommand = `gpg --export-options export-minimal,no-export-attributes --export-filter drop-subkey='usage = a' --armor --export ${claim.fingerprint.toUpperCase()}`
+  const exportCommand = `gpg --export-options export-minimal,no-export-attributes --armor --export ${claim.fingerprint.toUpperCase()}`
 
   if (result) return (
     <div className="update-panel fade-in">
@@ -758,9 +755,6 @@ function UpdateKeyPanel({ claim, address, hasEmail = false, onDone, onCancel, in
           )}
           <div className="value">Proofs: {preview.proofs}</div>
           {preview.otherNotes?.length > 0 && <div className="value" style={{ wordBreak: 'break-all' }}>Other notations: {preview.otherNotes.join(', ')}</div>}
-          {preview.droppedSubkeys?.length > 0 && (
-            <div className="value" style={{ color: 'var(--color-text-muted)' }}>Left out (SSH-only subkey): {preview.droppedSubkeys.map(f => `${f.slice(0, 4)} ${f.slice(4, 8)} …`).join(', ')}</div>
-          )}
           <div className="value" style={{ color: 'var(--color-text-muted)' }}>{(preview.bytes / 1024).toFixed(1)} KB{preview.before ? ` on-chain (${(preview.before / 1024).toFixed(1)} KB as pasted text)` : ''}</div>
         </div>
       )}

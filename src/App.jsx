@@ -1026,7 +1026,7 @@ function Explorer() {
             </div>
           </section>
           <section className="home-close">
-            <p>Want your own? <a href="/attest">Adding your key</a> takes a few minutes and one transaction.</p>
+            <p><a href="/attest">Adding your key</a> takes a few minutes and one transaction.<br />Or do all of it <a href={`${links.docs}/#/cli`} target="_blank" rel="noopener noreferrer">from a terminal, on your own node</a>.</p>
             <a className="home-roadmap" href={`${links.docs}/#/roadmap`} target="_blank" rel="noopener noreferrer">What’s coming: the roadmap →</a>
           </section>
         </>
