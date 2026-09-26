@@ -961,11 +961,7 @@ function Explorer() {
     <>
       {!submitted && (
         <section className="home-hero">
-          <h1 className="home-tagline">PGP keys on Ethereum</h1>
-          <h1 className="home-tagline home-tagline-2">Old trust – new ground</h1>
-          <p className="home-lede">
-            Look up anyone's key, or add yours. Anyone can check it, and none of it depends on us.
-          </p>
+          <h1 className="home-tagline">Look up an identity</h1>
         </section>
       )}
       <div className={submitted ? 'search-section' : 'search-section search-section-home'}>
@@ -1009,7 +1005,7 @@ function Explorer() {
             </a>
           </section>
           <p className="home-cards-link">
-            <a href={`${links.docs}/#/sdk?id=readme-card`} target="_blank" rel="noopener noreferrer">Put your card in a README →</a>
+            <a href={`${links.docs}/#/sdk?id=readme-card`} target="_blank" rel="noopener noreferrer">Get your own card →</a>
           </p>
           <section className="home-rules">
             <div className="home-rule">
@@ -1026,7 +1022,7 @@ function Explorer() {
             </div>
           </section>
           <section className="home-close">
-            <p><a href="/attest">Adding your key</a> takes a few minutes and one transaction.<br />Or do all of it <a href={`${links.docs}/#/cli`} target="_blank" rel="noopener noreferrer">from a terminal, on your own node</a>.</p>
+            <p><a href="/attest">Adding your key</a> takes a few minutes and one transaction.<br className="home-close-break" /> Or do all of it <a href={`${links.docs}/#/cli`} target="_blank" rel="noopener noreferrer">from a terminal, on your own node</a>.</p>
             <a className="home-roadmap" href={`${links.docs}/#/roadmap`} target="_blank" rel="noopener noreferrer">What’s coming: the roadmap →</a>
           </section>
         </>
