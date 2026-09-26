@@ -31,6 +31,7 @@ import { useAlwaysCheckProofs, CHECK_NOTE } from './proofChecks'
 import { ReadFailed, EnsNotResolved } from './components/ReadFailed'
 import IdentityTabs from './components/IdentityTabs'
 import RecordsTab from './components/RecordsTab'
+import EncryptTab, { useEncryptionKey } from './components/EncryptTab'
 
 const NO_CLAIMS = []
 
@@ -145,9 +146,9 @@ function parseRoute() {
 }
 
 // /ens/<name>/claims → { id: '<name>', tab: 'claims' }; no suffix → overview.
-const TABS = ['overview', 'claims', 'records']
+const TABS = ['overview', 'claims', 'records', 'encrypt']
 function splitTab(value) {
-  const m = value.match(/^(.*)\/(claims|records)$/)
+  const m = value.match(/^(.*)\/(claims|records|encrypt)$/)
   return m ? { id: m[1], tab: m[2] } : { id: value, tab: 'overview' }
 }
 
@@ -473,6 +474,9 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
   const fates = useMemo(() => claimFates(attestations), [attestations])
   const check = latest?.verification ? claimCheckText(latest.verification) : null
   const soon = expiresSoon(latest?.verification)
+  const ordered = useMemo(() => attestations.slice().reverse(), [attestations])
+  const enc = useEncryptionKey(ordered)
+  const name = ensName || address
 
   return (
     <div className="detail-page fade-in">
@@ -506,6 +510,8 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
       </div>
 
       <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: count }} />
+
+      {tab === 'encrypt' && <EncryptTab enc={enc} name={name} onClaims={() => onTab('claims')} />}
 
       {tab === 'records' && (
         <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} armoredKey={latest?.pgpPublicKey} fingerprint={latest?.fingerprint ?? null} canEdit={isSelf} />
@@ -552,6 +558,11 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
             )}
             {ensName && latest.verification?.verified && (
               <EnsRecordLine ensName={ensName} fingerprint={latest.fingerprint} />
+            )}
+            {enc?.ok && (
+              <div className="encrypt-line">
+                Can receive encrypted messages · <a href="#" onClick={e => { e.preventDefault(); onTab('encrypt') }}>Encrypt</a>
+              </div>
             )}
           </div>
         )}
@@ -716,6 +727,8 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
 
   // Only a verified, active claim drives the identity panel; there is no unverified fallback.
   const bestClaim = useMemo(() => claims.find(c => !c.revoked && c.verification?.verified) ?? null, [claims])
+  const encClaims = useMemo(() => (bestClaim ? [bestClaim] : NO_CLAIMS), [bestClaim])
+  const enc = useEncryptionKey(encClaims)
 
   if (isLoading) {
     return <div className="status info" style={{ marginTop: 24 }}>Reading the registry…</div>
@@ -738,6 +751,8 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
 
       <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: claims.length }} />
 
+      {tab === 'encrypt' && <EncryptTab enc={enc} name={bestClaim?.address ?? fingerprint.toUpperCase()} onClaims={() => onTab('claims')} />}
+
       {tab === 'records' && (
         <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} armoredKey={bestClaim?.pgpPublicKey} fingerprint={bestClaim?.fingerprint ?? null} canEdit={!!wallet && !!bestClaim && wallet.toLowerCase() === bestClaim.address.toLowerCase()} />
       )}
@@ -746,7 +761,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
         <PgpKeyInfo armoredKey={bestClaim.pgpPublicKey} show="key" />
       )}
 
-      {tab !== 'records' && (
+      {(tab === 'overview' || tab === 'claims') && (
       <div className="detail-summary">
         <div className="detail-label">Claims ({claims.length})</div>
         {claims.length > 0 && activeClaims.length === 0 && (

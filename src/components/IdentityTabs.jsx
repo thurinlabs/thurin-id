@@ -1,10 +1,11 @@
 // The identity page's tabs. Each tab is a route (/ens/<name>, /ens/<name>/claims,
-// /ens/<name>/records) so every tab is a shareable URL; the bar reuses /attest's styles.
+// /ens/<name>/records, /ens/<name>/encrypt) so every tab is a shareable URL; the bar reuses /attest's styles.
 
 export const IDENTITY_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'claims', label: 'Claims' },
   { id: 'records', label: 'Records' },
+  { id: 'encrypt', label: 'Encrypt' },
 ]
 
 export default function IdentityTabs({ tab, onTab, counts = {} }) {
