@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useBalance, useSignTypedData, useReadContract } from 'wagmi'
+import { useBalance, useSignTypedData, useReadContract, usePublicClient } from 'wagmi'
 import { useRelay } from '../relay'
-import { recoverTypedDataAddress } from 'viem'
+import { permissionSigned } from '../permission'
 import { attestTypedData, reattestTypedData, updateKeyTypedData } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, NETWORK } from '../wagmiConfig'
 import { encodeHandoff } from '../handoff'
@@ -34,6 +34,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
   const [status, setStatus] = useState(null)
   const [copied, setCopied] = useState(false)
   const { signTypedDataAsync } = useSignTypedData()
+  const client = usePublicClient({ chainId: CHAIN.id })
   const { data: nonce, isFetched: nonceFetched, refetch: refetchNonce } = useReadContract({
     address: REGISTRY_ADDRESS, abi: REGISTRY_ABI, functionName: 'nonces', args: [address], query: { enabled: !!address },
   })
@@ -55,8 +56,8 @@ export default function Authorize({ address, op, fields, onPublished }) {
           : updateKeyTypedData(CHAIN.id, REGISTRY_ADDRESS, { ...common, index: BigInt(fields.index), key: fields.key })
       const signature = await signTypedDataAsync(typed)
       // Prove it back before showing it: a wallet that signs something else must not produce a link.
-      const signer = await recoverTypedDataAddress({ ...typed, signature })
-      if (signer.toLowerCase() !== owner) { setStatus({ type: 'err', msg: 'The wallet signed with a different address than the one connected. Nothing was published.' }); return }
+      const signed = await permissionSigned(client, typed, signature, address)
+      if (!signed.ok) { setStatus({ type: 'err', msg: signed.signer ? 'The wallet signed with a different address than the one connected. Nothing was published.' : `${signed.reason} Nothing was published.` }); return }
       const h = {
         v: 2, op, network: NETWORK, owner, fingerprint: fields.fingerprint.toUpperCase(), includeEmail: !!fields.includeEmail,
         key: fields.key, ...(fields.signature ? { signature: fields.signature } : {}), ...(fields.index !== undefined && fields.index !== null ? { index: Number(fields.index) } : {}),

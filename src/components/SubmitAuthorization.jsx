@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import { forgetHandoff } from '../handoff'
 import { useRelay } from '../relay'
 import { useWriteContract, useReadContract } from 'wagmi'
-import { createPublicClient, http, stringToHex, recoverTypedDataAddress, getAddress } from 'viem'
+import { createPublicClient, http, stringToHex, getAddress } from 'viem'
+import { permissionSigned } from '../permission'
 import { contractErrorText, sameFingerprint,
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
   attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, markCompromisedTypedData,
@@ -13,7 +14,8 @@ import { spacedFingerprint } from '../format'
 
 // Publish someone else's authorized write. The owner signed the typed data in the CLI
 // (`thurin attest --authorize`); this panel rebuilds that typed data from the hand-off,
-// recovers the signer, checks the nonce and deadline against the chain, verifies the PGP
+// checks the signature (the owner's key, or a contract account's own answer: EIP-1271), checks the
+// nonce and deadline against the chain, verifies the PGP
 // side the way a lookup would, and then lets *any* connected wallet pay for the `…For` call.
 
 
@@ -85,7 +87,7 @@ function argsFor(h) {
 
 export default function SubmitAuthorization({ handoff: h, isConnected }) {
   const RELAYER_URL = useRelay()   // null unless it publishes to this site's network
-  const [check, setCheck] = useState(null)     // { ok, problems: [], names, proofs, bytes, signer }
+  const [check, setCheck] = useState(null)     // { ok, problems: [], names, proofs, bytes }
   const [status, setStatus] = useState(null)
   const [txHash, setTxHash] = useState(null)
   const [done, setDone] = useState(false)
@@ -111,10 +113,12 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
     let cancelled = false
     ;(async () => {
       const problems = []
-      let names = [], proofs = 0, bytes = 0, signer = null
+      let names = [], proofs = 0, bytes = 0
       try {
-        signer = await recoverTypedDataAddress({ ...typedDataFor(h), signature: h.authorization.signature })
-        if (signer.toLowerCase() !== h.owner) problems.push(`This permission wasn't signed by ${shortAddr(h.owner)} (it was signed by ${shortAddr(signer)}), so something in the link was changed. Ask for a new link.`)
+        const signed = await permissionSigned(createPublicClient({ chain: CHAIN, transport: http(RPC_URL) }), typedDataFor(h), h.authorization.signature, getAddress(h.owner))
+        if (!signed.ok) problems.push(signed.signer
+          ? `This permission wasn't signed by ${shortAddr(h.owner)} (it was signed by ${shortAddr(signed.signer)}), so something in the link was changed. Ask for a new link.`
+          : `${signed.reason} Ask for a new link.`)
       } catch (e) {
         problems.push("This permission's signature couldn't be checked. Ask for a new link.")
       }
@@ -145,7 +149,7 @@ export default function SubmitAuthorization({ handoff: h, isConnected }) {
         if (target?.revokeReason === 'compromised') problems.push(`Claim #${h.index} is already marked compromised.`)
         if (target && keyStatus === 'active') problems.push(`${shortAddr(h.owner)} still has an active claim on this key; revoke that one as compromised first.`)
       } else if (revoked) problems.push(`Claim #${h.index} is already revoked.`)
-      if (!cancelled) setCheck({ ok: problems.length === 0, problems, names, proofs, bytes, signer })
+      if (!cancelled) setCheck({ ok: problems.length === 0, problems, names, proofs, bytes })
     })()
     return () => { cancelled = true }
   }, [h, chainNonce, nonceFetched, rows, target, keyStatus])
