@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useBalance, useSignTypedData, useReadContract, usePublicClient } from 'wagmi'
 import { useRelay } from '../relay'
-import { permissionSigned } from '../permission'
-import { attestTypedData, reattestTypedData, updateKeyTypedData } from '@thurinlabs/identity-kit'
+import { attestTypedData, reattestTypedData, updateKeyTypedData, permissionSigned } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, CHAIN, NETWORK } from '../wagmiConfig'
 import { encodeHandoff } from '../handoff'
 

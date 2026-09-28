@@ -3,8 +3,7 @@ import { forgetHandoff } from '../handoff'
 import { useRelay } from '../relay'
 import { useWriteContract, useReadContract } from 'wagmi'
 import { createPublicClient, http, stringToHex, getAddress } from 'viem'
-import { permissionSigned } from '../permission'
-import { contractErrorText, sameFingerprint,
+import { contractErrorText, sameFingerprint, permissionSigned,
   parsePgpKey, verifyAttestation, identifyProof, fingerprintToBytes, bytesToFingerprint,
   attestTypedData, reattestTypedData, updateKeyTypedData, revokeTypedData, setRecordTypedData, markCompromisedTypedData,
 } from '@thurinlabs/identity-kit'
