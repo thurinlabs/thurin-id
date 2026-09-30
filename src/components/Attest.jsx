@@ -349,7 +349,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
             autoComplete="off"
             className="pgp-input"
             style={{ minHeight: 120, marginTop: 16 }}
-            placeholder={`Paste the whole output here:\n\n-----BEGIN PGP SIGNED MESSAGE-----\n…\n-----END PGP SIGNATURE-----\n-----BEGIN PGP PUBLIC KEY BLOCK-----\n…\n-----END PGP PUBLIC KEY BLOCK-----`}
+            placeholder={`Paste the whole output here:\n\n-----BEGIN PGP SIGNATURE-----\n…\n-----END PGP SIGNATURE-----\n-----BEGIN PGP PUBLIC KEY BLOCK-----\n…\n-----END PGP PUBLIC KEY BLOCK-----`}
             value={paste}
             onChange={e => setPaste(e.target.value)}
             spellCheck={false}
@@ -1106,7 +1106,7 @@ export default function Attest() {
               the output here, and publish from your wallet.
             </p>
             <p className="helper" style={{ marginBottom: 24 }}>
-              You'll need <code>gpg</code> in a terminal <em>(desktop only)</em> and a little ETH for the fee.
+              You'll need <code>gpg</code> in a terminal <em>(desktop only)</em>. The fee is a little ETH, or nothing: without ETH, our relay can publish it for you.
             </p>
           </>
         )}
@@ -1172,7 +1172,7 @@ export default function Attest() {
       {!handoff && (
         <p className="helper attest-cli">
           Rather use a terminal? The CLI does the same:<br />
-          <code>npx @thurinlabs/thurin attest</code> · <a href="https://docs.thurin.id/#/cli" target="_blank" rel="noopener noreferrer">docs</a>
+          <code>npx @thurinlabs/thurin@latest attest</code> · <a href="https://docs.thurin.id/#/cli" target="_blank" rel="noopener noreferrer">docs</a>
         </p>
       )}
     </>

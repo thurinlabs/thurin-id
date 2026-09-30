@@ -115,7 +115,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
       <div className="label">Signed. Anyone can publish this until {fmtDate(handoff.authorization.deadline)}</div>
       <p className="helper">
         {RELAYER_URL ? 'Three' : 'Two'} ways to get it on-chain. Whoever does it pays the fee; the claim is yours either way.
-        Changed your mind? <code>thurin cancel</code> stops every permission you haven't used yet.
+        Changed your mind? It does nothing after that date. To stop it sooner, run <code>thurin cancel</code> (a transaction, so it needs ETH).
       </p>
       <div className="row" style={{ marginTop: 8, flexWrap: 'wrap' }}>
         {RELAYER_URL && (
@@ -126,6 +126,7 @@ export default function Authorize({ address, op, fields, onPublished }) {
         <button className="btn" onClick={copyLink}>{copied ? 'copied' : 'Copy link for someone with a wallet'}</button>
         <button className="btn btn-sm" onClick={() => copyToFile(handoff)}>Download for thurin submit</button>
       </div>
+      {RELAYER_URL && <p className="helper" style={{ marginTop: 8 }}>Our relay pays the fee, within its daily budget.</p>}
       <textarea name="permission-link" className="pgp-input" readOnly value={link} onFocus={e => e.target.select()} />
       {status && <div className={`status ${status.type}`}>{status.msg}</div>}
     </div>
