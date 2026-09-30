@@ -1,0 +1,18 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Contact: mailto:hello@thurin.id
+Encryption: openpgp4fpr:08B9374FDFBEC67EFFA24E669D3D86E35361EF7B
+Encryption: https://thurin.id/pgp/08B9374FDFBEC67EFFA24E669D3D86E35361EF7B.asc
+Expires: 2027-09-30T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://thurin.id/.well-known/security.txt
+Policy: https://github.com/thurinlabs/.github/blob/main/SECURITY.md
+
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQSUYnzPLsUUpR+k3xYIRbw2TboccgUCar05CgAKCRAIRbw2Tboc
+cuToAQCMdYYuw/bWn7BCIpqeZwp9Ykl0Nl6JLNnZXkda1Kc//AEAgPr0jXoAkYIG
+ZcvtFjPom4FDjk7dlb5WfvA1bvVc3Ag=
+=NI7j
+-----END PGP SIGNATURE-----
