@@ -6,7 +6,7 @@ import { useSafeAvatar, AvatarImg } from './avatar'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { normalize } from 'viem/ens'
 import { REGISTRY_ADDRESS, NETWORK, CHAIN, EXPLORER_URL, typedNameClient, readClient } from './wagmiConfig'
-import { keyIdToBytes, normalizeFingerprint, sameFingerprint, readClaims, findOwners, CLAIM_LIMIT } from '@thurinlabs/identity-kit'
+import { keyIdToBytes, normalizeFingerprint, sameFingerprint, readClaims, findOwners, keyStanding, CLAIM_LIMIT } from '@thurinlabs/identity-kit'
 import {
   identifyProof,
   verifyProof,
@@ -146,11 +146,12 @@ function parseRoute() {
   return null
 }
 
-// /ens/<name>/claims → { id: '<name>', tab: 'claims' }; no suffix → overview.
-const TABS = ['overview', 'claims', 'records', 'encrypt']
+// /ens/<name>/proofs → { id: '<name>', tab: 'proofs' }; no suffix → overview. The old /claims tab is
+// the Overview now, so its links still land.
+const TABS = ['overview', 'proofs', 'records', 'encrypt']
 function splitTab(value) {
-  const m = value.match(/^(.*)\/(claims|records|encrypt)$/)
-  return m ? { id: m[1], tab: m[2] } : { id: value, tab: 'overview' }
+  const m = value.match(/^(.*)\/(claims|proofs|records|encrypt)$/)
+  return m ? { id: m[1], tab: m[2] === 'claims' ? 'overview' : m[2] } : { id: value, tab: 'overview' }
 }
 
 function pushRoute(type, value, tab = 'overview') {
@@ -262,6 +263,19 @@ function Topbar({ isAttest }) {
 
 // ─── PGP Key Info ──────────────────────────────────────────────────────────
 
+/** How many Thurin proofs a key's notations name: the Proofs tab's badge. 0 while it's read. */
+function useProofCount(armoredKey) {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    setCount(0)
+    if (!armoredKey) return
+    let cancelled = false
+    parsePgpKey(armoredKey).then(info => { if (!cancelled && info) setCount(info.notations.filter(n => identifyProof(n)).length) })
+    return () => { cancelled = true }
+  }, [armoredKey])
+  return count
+}
+
 function PgpKeyInfo({ armoredKey, show = 'all' }) {
   const [keyInfo, setKeyInfo] = useState(null)
   const [showKey, setShowKey] = useState(false)
@@ -315,11 +329,10 @@ function PgpKeyInfo({ armoredKey, show = 'all' }) {
 
   return (
     <div className="detail-history">
-      <div className="detail-label">
-        {show === 'key' ? 'PGP Key' : 'PGP Key Details'}
-      </div>
+      {/* The Proofs tab is only proofs; the key's own details (names included) sit on the Overview. */}
+      {show !== 'proofs' && <div className="detail-label">Key details</div>}
 
-      {show !== 'key' && keyInfo.userIDs.length > 0 && (
+      {show !== 'proofs' && keyInfo.userIDs.length > 0 && (
         <div className="mono-box" style={{ marginBottom: 2 }}>
           {/* Every user ID stored on-chain. The attest flow strips emails unless the
               owner chose to include them, so what shows here is what they published. */}
@@ -468,14 +481,17 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
   const { address: wallet } = useAccount()
   const isSelf = !!wallet && wallet.toLowerCase() === address.toLowerCase()
   const activeCount = attestations.filter(a => !a.revoked).length
-  // The claim this page speaks for: the newest *active* one (a revoked claim can be newer,
-  // as after moving a key to another address). Only a fully revoked address shows its last claim.
-  const latest = attestations.find(a => !a.revoked) || attestations[0] // newest first
+  const ordered = useMemo(() => attestations.slice().reverse(), [attestations])   // oldest first, as the kit reads them
+  // The claim this page speaks for, by the kit's rule: the newest active claim that verifies, else
+  // the newest active one, else (every claim ended) the newest. The same key Encrypt uses.
+  const latest = useMemo(() => keyStanding(ordered).claim, [ordered]) ?? attestations[0]
+  // Other active keys that verify: an address can hold several (a rotation in progress, say).
+  const alsoActive = attestations.filter(a => !a.revoked && a.verification?.verified && a.index !== latest?.index)
+  const proofCount = useProofCount(latest && !latest.revoked && latest.verification?.verified ? latest.pgpPublicKey : null)
   // Why a claim does or doesn't count, in the kit's words; the "If this is yours" fix only for the owner.
   const fates = useMemo(() => claimFates(attestations), [attestations])
   const check = latest?.verification ? claimCheckText(latest.verification) : null
   const soon = expiresSoon(latest?.verification)
-  const ordered = useMemo(() => attestations.slice().reverse(), [attestations])
   const enc = useEncryptionKey(ordered)
   const name = ensName || address
 
@@ -505,42 +521,18 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
         </div>
       </div>
 
-      <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: count }} />
+      <IdentityTabs tab={tab} onTab={onTab} counts={{ proofs: proofCount }} />
 
-      {tab === 'encrypt' && <EncryptTab enc={enc} name={name} onClaims={() => onTab('claims')} />}
+      {tab === 'encrypt' && <EncryptTab enc={enc} name={name} onClaims={() => onTab('overview')} />}
 
       {tab === 'records' && (
         <RecordsTab owner={address} index={latest && !latest.revoked && latest.verification?.verified ? latest.index : null} armoredKey={latest?.pgpPublicKey} fingerprint={latest?.fingerprint ?? null} canEdit={isSelf} />
       )}
 
-      {tab === 'claims' && (
-        <>
-          {latest && latest.pgpPublicKey && latest.verification?.verified && !latest.revoked && (
-            <PgpKeyInfo armoredKey={latest.pgpPublicKey} show="key" />
-          )}
-        </>
-      )}
-
-      {tab === 'overview' && (<>
+      {tab === 'overview' && latest && !latest.revoked && (
       <div className="detail-summary">
-        <div className="detail-label">Summary</div>
-        <div className="summary-grid">
-          <div className="summary-item">
-            <span className="summary-value">{count}</span>
-            <span className="summary-key">Total</span>
-          </div>
-          <div className="summary-item">
-            <span className="summary-value">{activeCount}</span>
-            <span className="summary-key">Active</span>
-          </div>
-          <div className="summary-item">
-            <span className="summary-value">{count - activeCount}</span>
-            <span className="summary-key">Ended</span>
-          </div>
-        </div>
-        {latest && !latest.revoked && (
-          <div className="mono-box" style={{ marginTop: 12 }}>
-            <div className="label">current fingerprint</div>
+          <div className="mono-box">
+            <div className="label">Current key</div>
             <div className="value"><Fingerprint value={latest.fingerprint} /></div>
             {latest.verification && check && (
               <>
@@ -557,13 +549,26 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
             )}
             {enc?.ok && (
               <div className="encrypt-line">
-                Can receive encrypted messages · <a href="#" onClick={e => { e.preventDefault(); onTab('encrypt') }}>Encrypt</a>
+                Can receive encrypted <span className="nowrap">messages ·</span> <a href="#" onClick={e => { e.preventDefault(); onTab('encrypt') }}>Encrypt</a>
+              </div>
+            )}
+            {alsoActive.length > 0 && (
+              <div className="encrypt-line also-active">
+                Also active:{' '}
+                {alsoActive.map((a, i) => (
+                  <Fragment key={a.index}>{i > 0 && ', '}<a href={`/pgp/${a.fingerprint.toUpperCase()}`}>{a.fingerprint.toUpperCase().slice(0, 8)}…{a.fingerprint.toUpperCase().slice(-8)}</a></Fragment>
+                ))}
               </div>
             )}
           </div>
-        )}
       </div>
+      )}
 
+      {tab === 'overview' && latest && latest.pgpPublicKey && latest.verification?.verified && !latest.revoked && (
+        <PgpKeyInfo armoredKey={latest.pgpPublicKey} show="key" />
+      )}
+
+      {tab === 'proofs' && (<>
       {/* Only a verified, active claim shows an identity: a stored key isn't the owner's until
           its signature binds it to this address. */}
       {latest && latest.pgpPublicKey && latest.verification?.verified && !latest.revoked ? (
@@ -603,9 +608,9 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
 
       </>)}
 
-      {tab === 'claims' && attestations.length > 0 && (
+      {tab === 'overview' && attestations.length > 0 && (
         <div className="detail-history">
-          <div className="detail-label">Claim History</div>
+          <div className="detail-label">Claim history <span className="detail-label-count">{count} total · {activeCount} active · {count - activeCount} ended</span></div>
           <div className="attestation-table-wrap stack">
             <table className="attestation-table stack">
               <thead>
@@ -725,6 +730,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
   const bestClaim = useMemo(() => claims.find(c => !c.revoked && c.verification?.verified) ?? null, [claims])
   const encClaims = useMemo(() => (bestClaim ? [bestClaim] : NO_CLAIMS), [bestClaim])
   const enc = useEncryptionKey(encClaims)
+  const proofCount = useProofCount(bestClaim?.pgpPublicKey ?? null)
 
   if (isLoading) {
     return <div className="status info" style={{ marginTop: 24 }}>Reading the registry…</div>
@@ -745,19 +751,15 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
         </div>
       </div>
 
-      <IdentityTabs tab={tab} onTab={onTab} counts={{ claims: claims.length }} />
+      <IdentityTabs tab={tab} onTab={onTab} counts={{ proofs: proofCount }} />
 
-      {tab === 'encrypt' && <EncryptTab enc={enc} name={bestClaim?.address ?? fingerprint.toUpperCase()} onClaims={() => onTab('claims')} />}
+      {tab === 'encrypt' && <EncryptTab enc={enc} name={bestClaim?.address ?? fingerprint.toUpperCase()} onClaims={() => onTab('overview')} />}
 
       {tab === 'records' && (
         <RecordsTab owner={bestClaim?.address ?? null} index={bestClaim ? bestClaim.index : null} armoredKey={bestClaim?.pgpPublicKey} fingerprint={bestClaim?.fingerprint ?? null} canEdit={!!wallet && !!bestClaim && wallet.toLowerCase() === bestClaim.address.toLowerCase()} />
       )}
 
-      {tab === 'claims' && bestClaim?.pgpPublicKey && (
-        <PgpKeyInfo armoredKey={bestClaim.pgpPublicKey} show="key" />
-      )}
-
-      {(tab === 'overview' || tab === 'claims') && (
+      {tab === 'overview' && (
       <div className="detail-summary">
         <div className="detail-label">Claims ({claims.length})</div>
         {claims.length > 0 && activeClaims.length === 0 && (
@@ -824,7 +826,11 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
 
       )}
 
-      {tab !== 'overview' ? null : bestClaim?.pgpPublicKey ? (
+      {tab === 'overview' && bestClaim?.pgpPublicKey && (
+        <PgpKeyInfo armoredKey={bestClaim.pgpPublicKey} show="key" />
+      )}
+
+      {tab !== 'proofs' ? null : bestClaim?.pgpPublicKey ? (
         <PgpKeyInfo armoredKey={bestClaim.pgpPublicKey} show="proofs" />
       ) : claims.length > 0 && (
         <div className="detail-history">

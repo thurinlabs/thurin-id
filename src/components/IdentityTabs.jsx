@@ -3,7 +3,7 @@
 
 export const IDENTITY_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'claims', label: 'Claims' },
+  { id: 'proofs', label: 'Proofs' },
   { id: 'records', label: 'Records' },
   { id: 'encrypt', label: 'Encrypt' },
 ]

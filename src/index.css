@@ -289,6 +289,9 @@ pre.value.prose { padding: 0; }
   text-transform: uppercase;
   margin-bottom: 12px;
 }
+/* Counts beside a heading ("Claim history 4 total · 2 active"): quieter than the label. */
+.detail-label-count { display: inline-block; margin-left: 10px; color: var(--color-text-muted); letter-spacing: 0.04em; text-transform: none; white-space: nowrap; }
+
 
 .detail-header-content {
   display: flex;
@@ -1043,6 +1046,9 @@ body:has(.home-close) .footer { margin-top: 44px; }
 .encrypt-result .helper code { white-space: nowrap; }
 .encrypt-result .helper .keep-case { word-break: break-all; }
 .encrypt-line { margin-top: 8px; font-size: 14px; color: var(--color-text-muted); }
+/* Lines of words and short fingerprints: break between them, never inside one. */
+.encrypt-line { word-break: normal; }
+.encrypt-line .nowrap, .also-active a { white-space: nowrap; }
 .encrypt-line a, .encrypt-link { color: var(--color-primary); text-decoration: underline; }
 .encrypt-line a:hover, .encrypt-link:hover { color: var(--color-primary-light); }
 
