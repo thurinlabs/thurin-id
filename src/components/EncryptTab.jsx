@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { encryptionKeyFor, encryptRefusalText, keyChangedText, encryptTo, formatClaimDate } from '@thurinlabs/identity-kit'
-import { spacedFingerprint } from '../format'
+import Fingerprint from './Fingerprint'
 
 // Encrypt a message or a file to an identity, in this tab. The kit picks the key: only the claim
 // that counts, with a valid encryption subkey. Nothing is uploaded or fetched; the sender delivers
@@ -94,10 +94,10 @@ export default function EncryptTab({ enc, name, onClaims }) {
       <div className="mono-box">
         <div className="label">To</div>
         <div className="value encrypt-to keep-case">{name}</div>
-        <div className="value encrypt-fp">{spacedFingerprint(fp)}</div>
+        <div className="value encrypt-fp"><Fingerprint value={fp} /></div>
         <div className="value encrypt-key">
-          encryption subkey {enc.subkey.algorithm}
-          {enc.subkey.expires ? ` · expires ${formatClaimDate(enc.subkey.expires)}` : ''}
+          <span className="encrypt-key-type">encryption subkey {enc.subkey.algorithm}</span>
+          {enc.subkey.expires && <span className="encrypt-expires"><span className="encrypt-dot"> · </span>expires {formatClaimDate(enc.subkey.expires)}</span>}
         </div>
       </div>
 

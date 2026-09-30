@@ -7,6 +7,7 @@ import { createPublicClient, http, toHex, encodeFunctionData } from 'viem'
 import { asArmor } from '../payload'
 import { kindLabel } from '../recordLabels'
 import { spacedFingerprint, formatDate, claimStateLabel } from '../format'
+import Fingerprint from './Fingerprint'
 import { contractErrorText, hasEmailUserID, keyProblemText, sameFingerprint, parsePgpKey, identifyProof, fingerprintToBytes, verifyAttestation, readClaims, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK, readClient } from '../wagmiConfig'
 import { readHandoff, forgetHandoff } from '../handoff'
@@ -286,7 +287,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         <span className="step-title">Sign with your PGP key</span>
         <span className="step-badge">✓ signed</span>
       </div>
-      {verified && <div className="mono-box"><div className="label">signed by</div><div className="value">{spacedFingerprint(verified.fingerprint)}</div></div>}
+      {verified && <div className="mono-box"><div className="label">signed by</div><div className="value"><Fingerprint value={verified.fingerprint} /></div></div>}
     </div>
   )
 

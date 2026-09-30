@@ -22,6 +22,7 @@ import {
 } from '@thurinlabs/identity-kit'
 import { siteLinks } from './links'
 import { spacedFingerprint, formatDate, formatIsoDate, claimStateLabel } from './format'
+import Fingerprint from './components/Fingerprint'
 import Attest from './components/Attest'
 import EnsRecordLine from './components/EnsRecordLine'
 import AccountMenu from './components/AccountMenu'
@@ -540,7 +541,7 @@ function AddressDetail({ address, ensName, ensAvatar, attestations, count, tab =
         {latest && !latest.revoked && (
           <div className="mono-box" style={{ marginTop: 12 }}>
             <div className="label">current fingerprint</div>
-            <div className="value">{spacedFingerprint(latest.fingerprint)}</div>
+            <div className="value"><Fingerprint value={latest.fingerprint} /></div>
             {latest.verification && check && (
               <>
                 <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -739,7 +740,7 @@ function FingerprintDetail({ fingerprint, tab = 'overview', onTab }) {
       <div className="detail-header">
         <div className="detail-label">PGP Fingerprint</div>
         <div className="detail-address-row">
-          <span className="detail-address">{spacedFingerprint(fingerprint)}</span>
+          <span className="detail-address detail-fp"><Fingerprint value={fingerprint} /></span>
           <button className="copy-btn" onClick={(e) => copyToClipboard(fingerprint.toUpperCase(), e)}>copy</button>
         </div>
       </div>

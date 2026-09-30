@@ -160,6 +160,12 @@
   color: var(--color-heading);
 }
 
+/* A fingerprint breaks only between its two halves (components/Fingerprint.jsx). The gap is on the
+   first half, so a wrapped second half starts flush left. */
+.fp { word-break: normal; }
+.fp-half { white-space: nowrap; }
+.fp-half:first-child { margin-right: 0.5em; }
+
 /* Sentences inside a mono box wrap between words; one very long string (a URL) may still break. */
 pre.value.prose { padding: 0; }
 
@@ -677,6 +683,8 @@ a.proof-link:hover {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* A fingerprint is what people compare, so it wraps between its halves instead of being cut. */
+  .detail-address.detail-fp { overflow: visible; white-space: normal; }
 
   .detail-address-row {
     gap: 8px;
@@ -1011,7 +1019,13 @@ body:has(.home-close) .footer { margin-top: 44px; }
 }
 
 /* Encrypt tab */
-.encrypt-key { color: var(--color-text-muted); font-size: 13px; }
+.encrypt-key { color: var(--color-text-muted); font-size: 13px; word-break: normal; }
+/* The key type and its expiry each stay whole; on a phone the expiry takes its own line. */
+.encrypt-key-type, .encrypt-expires { white-space: nowrap; }
+@media (max-width: 600px) {
+  .encrypt-expires { display: block; }
+  .encrypt-dot { display: none; }
+}
 .encrypt-to { font-size: 17px; margin-bottom: 4px; }
 .encrypt-fp { font-size: 14px; }
 .encrypt-box .encrypt-key { font-size: 14px; }
