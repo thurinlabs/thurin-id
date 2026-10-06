@@ -50,7 +50,7 @@ function normalizeKeyChoice(text) {
   const t = text.trim()
   if (!t) return { value: '' }
   const hex = t.replace(/\s/g, '').replace(/^0x/i, '')
-  if (/^[0-9a-f]{40}$/i.test(hex)) return { value: hex.toUpperCase(), fingerprint: hex.toUpperCase() }
+  if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(hex)) return { value: hex.toUpperCase(), fingerprint: hex.toUpperCase() }
   if (/^[\w.+@ -]+$/.test(t)) return { value: t }
   return { value: '', error: 'Use the key\'s fingerprint, an email on it, or a name on it.' }
 }

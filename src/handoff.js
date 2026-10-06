@@ -67,7 +67,7 @@ export function readHandoff() {
   if (h?.v !== 2) throw new Error('This link is from an older version. Make a new one with an up-to-date CLI.')
   if (!OPS.includes(h.op)) throw new Error("This page doesn't know what this link asks for. Update the CLI, or open the link on the latest thurin.id.")
   if (!/^0x[0-9a-f]{40}$/.test(h.owner || '')) throw new Error('This link has no valid owner. Make a new one with the CLI.')
-  if (!/^[0-9A-F]{40}$/.test(h.fingerprint || '')) throw new Error('This link names no valid key. Make a new one with the CLI.')
+  if (!/^(?:[0-9A-F]{40}|[0-9A-F]{64})$/.test(h.fingerprint || '')) throw new Error('This link names no valid key. Make a new one with the CLI.')
   const needsKey = h.op === 'attest' || h.op === 'reattest' || h.op === 'update-key', needsSig = h.op === 'attest' || h.op === 'reattest'
   if (h.op === 'set-record' && (typeof h.kind !== 'string' || typeof h.value !== 'string')) throw new Error('This link names no record. Make a new one with the CLI.')
   if (needsKey && !isKeyHex(h.key)) throw new Error('This link carries no key. Make a new one with the CLI.')

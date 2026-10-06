@@ -41,7 +41,7 @@ const NO_CLAIMS = []
 function detectInputType(value) {
   const trimmed = value.trim()
   if (/^0x[0-9a-fA-F]{40}$/.test(trimmed)) return 'address'
-  if (/^[0-9a-fA-F]{40}$/.test(trimmed)) return 'fingerprint'
+  if (/^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/.test(trimmed)) return 'fingerprint'   // v4 or v6
   if (/^[0-9a-fA-F]{16}$/.test(trimmed)) return 'keyId'
   if (trimmed.includes('.') && trimmed.length > 3) return 'ens'
   return null
@@ -139,7 +139,7 @@ function parseRoute() {
   const { id: value, tab } = splitTab(raw)
 
   if (prefix === 'eth' && /^0x[0-9a-fA-F]{40}$/.test(value)) return { type: 'address', value, tab }
-  if (prefix === 'pgp' && /^[0-9a-fA-F]{40}$/i.test(value)) return { type: 'fingerprint', value, tab }
+  if (prefix === 'pgp' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value)) return { type: 'fingerprint', value, tab }
   if (prefix === 'pgp' && /^[0-9a-fA-F]{16}$/i.test(value)) return { type: 'keyId', value, tab }
   if (prefix === 'ens') return { type: 'ens', value, tab }
 
@@ -1005,7 +1005,7 @@ function Explorer() {
 
         {query.trim() && !inputType && (
           <div className="status info" style={{ marginTop: 12 }}>
-            Enter an ENS name, an Ethereum address (0x + 40 hex), a PGP fingerprint (40 hex), or a key ID (16 hex).
+            Enter an ENS name, an Ethereum address (0x + 40 hex), a PGP fingerprint (40 or 64 hex), or a key ID (16 hex).
           </div>
         )}
 
