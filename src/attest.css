@@ -777,3 +777,9 @@ pre {
 .needs-name p + p { margin-top: 10px; }
 .needs-name .command-block { color: var(--color-text); }
 .needs-name .btn + p { margin-top: 12px; }
+
+/* Sign by QR: the request QR beside its instructions, the camera preview while scanning. */
+.qr-pair { display: flex; gap: 20px; align-items: flex-start; margin-top: 12px; flex-wrap: wrap; }
+.qr-pair > div { flex: 1 1 260px; min-width: 0; }
+.qr { width: 220px; height: 220px; flex: 0 0 auto; border-radius: 4px; }
+.qr-scanner video { width: 100%; max-width: 360px; aspect-ratio: 4 / 3; object-fit: cover; border: 1px solid var(--color-border, #444); border-radius: 4px; background: #000; display: block; margin: 8px 0; }

@@ -55,6 +55,8 @@ const commitMeta = {
 export default defineConfig(({ mode }) => ({
   plugins: [react(), csp(mode), commitMeta],
   base: './',
+  // Tests only: THURIN_QR_HARNESS=1 also builds dev/qr.html (the QR flow alone, under the same CSP).
+  build: process.env.THURIN_QR_HARNESS ? { rollupOptions: { input: { main: 'index.html', qr: 'dev/qr.html' } } } : undefined,
   // Card images come from thurin-og behind the same host; THURIN_OG=http://127.0.0.1:3333 points
   // the dev server at a local one.
   server: process.env.THURIN_OG ? { proxy: { '/card': process.env.THURIN_OG, '/og': process.env.THURIN_OG } } : undefined,

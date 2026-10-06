@@ -1,4 +1,4 @@
-import { Fragment, useState, useMemo, useEffect } from 'react'
+import { Fragment, useState, useMemo, useEffect, lazy, Suspense } from 'react'
 import { useAccount, useWriteContract, useReadContract } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
@@ -8,6 +8,8 @@ import { asArmor } from '../payload'
 import { kindLabel } from '../recordLabels'
 import { spacedFingerprint, formatDate, claimStateLabel } from '../format'
 import Fingerprint from './Fingerprint'
+// The QR device flow loads only when someone picks it.
+const QrSign = lazy(() => import('./QrSign'))
 import { contractErrorText, hasEmailUserID, keyProblemText, sameFingerprint, parsePgpKey, identifyProof, fingerprintToBytes, verifyAttestation, readClaims, verifyStatementSignature, leanKey, claimSignature, signatureEmail } from '@thurinlabs/identity-kit'
 import { REGISTRY_ADDRESS, REGISTRY_ABI, RPC_URL, CHAIN, EXPLORER_URL, NETWORK, readClient } from '../wagmiConfig'
 import { readHandoff, forgetHandoff } from '../handoff'
@@ -113,6 +115,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
   const [otherKey, setOtherKey] = useState(false)
   // A CLI hand-off brings the signature and key in the link: nothing to run or paste unless it fails.
   const [manual, setManual] = useState(!fromLink)
+  const [byQr, setByQr] = useState(false)   // "Sign by QR instead": a signing device holds the key
   const [status, setStatus] = useState(null)
   const [verified, setVerified] = useState(null) // { armoredFull, sig, signedText, keyId, fingerprint, publicKey, expiresAt, emails }
   const [preview, setPreview] = useState(null)   // { kept, removed, proofsPublished, proofsTotal, bytes }
@@ -312,7 +315,14 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
         </div>
       )}
 
-      {(active || done) && manual && (
+      {(active || done) && manual && byQr && (
+        <Suspense fallback={<p className="helper">Loading…</p>}>
+          <QrSign address={address} onResult={setPaste} onBack={() => { setByQr(false); setPaste('') }} />
+          {status && <div className={`status ${status.type}`}>{status.msg}</div>}
+        </Suspense>
+      )}
+
+      {(active || done) && manual && !byQr && (
         <div className="fade-in">
           <p className="helper">
             Run this in a terminal. It signs a line naming your Ethereum address and prints your public key.
@@ -355,6 +365,11 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
             spellCheck={false}
           />
           {status && <div className={`status ${status.type}`}>{status.msg}</div>}
+          {!verified && (
+            <button type="button" className="link-btn" onClick={() => { setByQr(true); setPaste('') }} style={{ marginTop: 10 }}>
+              Key on a signing device? Sign by QR instead →
+            </button>
+          )}
         </div>
       )}
 
