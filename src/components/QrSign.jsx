@@ -8,6 +8,7 @@ import jsQR from 'jsqr'
 import { parsePgpKey, statementText } from '@thurinlabs/identity-kit'
 import { URDecoder } from '../qr/ur'
 import { identityRequest, signRequest, nameProblem, readIdentityAnswer, readSignatureAnswer } from '../qr/keycard'
+import { deviceKeyFromClaims } from '../qr/claimKey'
 import Fingerprint from './Fingerprint'
 
 const nowSeconds = () => Math.floor(Date.now() / 1000)
@@ -155,7 +156,7 @@ async function armorOf(type, bytes) {
  * The whole device flow. Ends by handing back the same text a gpg paste would be: the signature
  * block and the key block.
  */
-export default function QrSign({ address, onResult, onBack }) {
+export default function QrSign({ address, claims = [], onResult, onBack }) {
   const [key, setKey] = useState(null)        // { bytes, info, created }
   const [keyText, setKeyText] = useState('')
   const [keyError, setKeyError] = useState(null)
@@ -164,6 +165,13 @@ export default function QrSign({ address, onResult, onBack }) {
   const [createdAt] = useState(nowSeconds)    // fixed for one request: the device bakes it into the key
   const [signedAt, setSignedAt] = useState(nowSeconds)
   const [got, setGot] = useState(false)
+  // The key already claimed from this address, when it's one a device can sign for: one click.
+  const [claimKey, setClaimKey] = useState(null)
+  useEffect(() => {
+    let live = true
+    deviceKeyFromClaims(claims).then(k => { if (live) setClaimKey(k) })
+    return () => { live = false }
+  }, [claims])
 
   const chooseKey = async (bytesOrText) => {
     setKeyError(null)
@@ -195,6 +203,12 @@ export default function QrSign({ address, onResult, onBack }) {
       {!key && !creating && (
         <div className="fade-in" style={{ marginTop: 12 }}>
           <div className="label">1 · your device's public key</div>
+          {claimKey && (
+            <div className="row" style={{ alignItems: 'center', marginBottom: 10 }}>
+              <button type="button" className="btn btn-sm" onClick={() => { setKey(claimKey); setSignedAt(nowSeconds()) }}>Use the key from your claim</button>
+              <span className="helper" style={{ margin: 0 }}><Fingerprint value={claimKey.info.fingerprint} /></span>
+            </div>
+          )}
           <textarea
             name="device-key"
             className="pgp-input"

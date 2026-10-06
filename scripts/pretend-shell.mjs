@@ -43,8 +43,11 @@ function parseRequest(b) {
   return out
 }
 
+// The key this pretend device made, kept in memory (each test worker is its own device) and in
+// the file (so the command-line tool can sign in a later run).
+let current = null
 async function loadKey() {
-  return openpgp.readPrivateKey({ armoredKey: readFileSync(KEY_FILE, 'utf8') })
+  return current ?? openpgp.readPrivateKey({ armoredKey: readFileSync(KEY_FILE, 'utf8') })
 }
 
 /** CREATE_IDENTITY → the certificate (public key, user ID, self-certification). */
@@ -52,6 +55,7 @@ export async function createIdentity(name, creationTime) {
   const { privateKey } = await openpgp.generateKey({
     type: 'ecc', curve: 'secp256k1', userIDs: [{ name }], date: new Date(creationTime * 1000), subkeys: [], format: 'object', config,
   })
+  current = privateKey
   mkdirSync(dirname(KEY_FILE), { recursive: true })
   writeFileSync(KEY_FILE, privateKey.armor(), { mode: 0o600 })
   return privateKey.toPublic().write()
@@ -59,7 +63,7 @@ export async function createIdentity(name, creationTime) {
 
 /** SIGN_MESSAGE → one detached canonical-text signature packet. */
 export async function signMessage(message, keyCreated, signatureTime) {
-  if (!existsSync(KEY_FILE)) throw new Error('no identity yet: answer a CREATE_IDENTITY first')
+  if (!current && !existsSync(KEY_FILE)) throw new Error('no identity yet: answer a CREATE_IDENTITY first')
   const key = await loadKey()
   if (Math.floor(key.getCreationTime().getTime() / 1000) !== keyCreated) throw new Error("the key creation time doesn't match this device's key")
   const sig = await openpgp.sign({

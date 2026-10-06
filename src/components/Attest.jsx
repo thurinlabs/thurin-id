@@ -110,7 +110,7 @@ function StepConnect({ active, done }) {
 // as a lookup will, and shows what goes on-chain (emails out unless ticked). No keyserver:
 // keys.openpgp.org drops user IDs without an email, so it can't supply the name proofs sit on.
 
-function StepSign({ active, done, locked, address, expectedFingerprint, includeEmail, setIncludeEmail, onVerified, paste, setPaste, fromLink = false }) {
+function StepSign({ active, done, locked, address, expectedFingerprint, includeEmail, setIncludeEmail, onVerified, paste, setPaste, fromLink = false, claims = [] }) {
   const [keyChoiceText, setKeyChoiceText] = useState('')
   const [otherKey, setOtherKey] = useState(false)
   // A CLI hand-off brings the signature and key in the link: nothing to run or paste unless it fails.
@@ -317,7 +317,7 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
 
       {(active || done) && manual && byQr && (
         <Suspense fallback={<p className="helper">Loading…</p>}>
-          <QrSign address={address} onResult={setPaste} onBack={() => { setByQr(false); setPaste('') }} />
+          <QrSign address={address} claims={claims} onResult={setPaste} onBack={() => { setByQr(false); setPaste('') }} />
           {status && <div className={`status ${status.type}`}>{status.msg}</div>}
         </Suspense>
       )}
@@ -1039,6 +1039,7 @@ export default function Attest() {
   const [replaceIndex, setReplaceIndex] = useState(null) // claim to revoke in the same tx, if any
   const { attestations: myClaims, count: myCount, refetch: refetchMine, loaded: myLoaded } = useMyAttestations(address)
   const activeClaims = useMemo(() => myClaims.filter(c => !c.revoked), [myClaims])
+  const myClaimsInOrder = useMemo(() => myClaims.slice().reverse(), [myClaims])   // chain order, as the kit's rules expect
 
   // Tabs: returning users land on their claims, first-timers on the wizard.
   const [tab, setTab] = useState(null) // 'claims' | 'new'
@@ -1158,6 +1159,7 @@ export default function Attest() {
           {isConnected && !authorized && !recordHandoff && tab === 'new' && (
             <>
               <StepSign
+                claims={myClaimsInOrder}
                 active={step === 2}
                 done={step > 2}
                 locked={published}
