@@ -385,10 +385,19 @@ function StepSign({ active, done, locked, address, expectedFingerprint, includeE
           {needsName && (
             <div className="status info needs-name" style={{ marginTop: 12 }}>
               <p>This key's only name includes your email{verified.emails.length ? ` (${verified.emails.join(', ')})` : ''}. Pick one:</p>
-              <p><strong>Keep your email private:</strong> add a name without it (change the name if you like), then run the command above again and paste the new output.</p>
-              <div className="command-block" style={{ marginTop: 8 }}><span className="prompt">$ </span>{addNameCommand}</div>
-              <button className="btn btn-sm" onClick={(e) => copyToClipboard(addNameCommand, e)}>copy command</button>
-              {needsName.proofs > 0 && (
+              {byQr ? (
+                // A device key's secret is on the device, out of gpg's reach: its name is fixed when the
+                // device makes the key, so the way out is a new key with a name only.
+                <p><strong>Keep your email private:</strong> your device set this name when it made the key, and it can't be changed afterwards.
+                  Choose <em>use another key</em>, then <em>Create one</em> with a name only. That makes a new key (a new fingerprint); sign with it instead.</p>
+              ) : (
+                <>
+                  <p><strong>Keep your email private:</strong> add a name without it (change the name if you like), then run the command above again and paste the new output.</p>
+                  <div className="command-block" style={{ marginTop: 8 }}><span className="prompt">$ </span>{addNameCommand}</div>
+                  <button className="btn btn-sm" onClick={(e) => copyToClipboard(addNameCommand, e)}>copy command</button>
+                </>
+              )}
+              {needsName.proofs > 0 && !byQr && (
                 <p>
                   Your {needsName.proofs === 1 ? 'proof is' : `${needsName.proofs} proofs are`} on the email name, so add {needsName.proofs === 1 ? 'it' : 'them'} to
                   the new name too (<a href="https://docs.thurin.id/#/guides/gnupg" target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>how</a>).

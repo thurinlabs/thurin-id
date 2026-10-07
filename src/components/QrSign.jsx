@@ -271,7 +271,7 @@ export default function QrSign({ address, claims = [], onResult, onBack }) {
           </div>
           <div className="row" style={{ alignItems: 'center' }}>
             <button type="button" className="link-btn" onClick={downloadKey}>Download your public key</button>
-            <button type="button" className="link-btn" onClick={() => { setKey(null); setGot(false) }}>use another key</button>
+            <button type="button" className="link-btn" onClick={() => { setKey(null); setGot(false); onResult('') }}>use another key</button>
           </div>
           {/* The device can't show a key again; before a claim, only this file (or creating the
               same name at the same time) brings it back. After a claim it's on-chain anyway. */}
